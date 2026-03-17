@@ -492,7 +492,7 @@ export default function PropertyDetailPage() {
           {activeTab === 'Contract Scan' && !(s32 || contract) && (
             <ContractScanEmptyState credits={credits} onUpload={triggerUpload} />
           )}
-          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Overview'          && <OverviewTab s32={s32} contract={contract} property={property} credits={credits} onUpload={triggerUpload} onNavigate={(t) => setContractSubTab(t)} onDownload={handleDownloadPack} />}
+          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Overview'          && <OverviewTab s32={s32} contract={contract} property={property} credits={credits} onUpload={triggerUpload} onNavigate={(t: string) => setContractSubTab(t)} onDownload={handleDownloadPack} />}
           {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'S32 Review'        && <S32ReviewTab s32={s32} onUpload={triggerUpload} credits={credits} />}
           {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Risk Analysis'     && <RiskAnalysisTab s32={s32} contract={contract} property={property} />}
           {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Negotiation Brief' && <NegotiationBriefTab s32={s32} contract={contract} />}
