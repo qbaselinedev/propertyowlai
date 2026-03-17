@@ -10,8 +10,6 @@ import { join } from 'path'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-// Detect Python command — Windows uses 'python', Unix uses 'python3'
-// Can also override via env var: PYTHON_CMD=python3
 function getPythonCmd(): string {
   if (process.env.PYTHON_CMD) return process.env.PYTHON_CMD
   if (platform() === 'win32') return 'python'
@@ -19,17 +17,16 @@ function getPythonCmd(): string {
 }
 const PYTHON_CMD = getPythonCmd()
 
-const SAFE_TOKEN_LIMIT   = 47_000   // hard ceiling per API call (50k - 3k buffer)
-const CALL1_OVERHEAD     = 2_500    // prompt + response overhead for Call 1
-const CALL2_PROMPT_TOKENS = 3_000   // Victorian rules engine system prompt
-const TOKENS_PER_FULL_IMG = 1_500   // 150 DPI full-res page ≈ 1500 tokens
-const CHARS_PER_TOKEN    = 4        // text token estimate
+const SAFE_TOKEN_LIMIT    = 47_000
+const CALL1_OVERHEAD      = 2_500
+const CALL2_PROMPT_TOKENS = 3_000
+const TOKENS_PER_FULL_IMG = 1_500
+const CHARS_PER_TOKEN     = 4
 
-// Image send priority — higher number = dropped first when budget is tight
 const IMAGE_PRIORITY: Record<string, number> = {
-  plan_of_subdivision:  1,  // MUST SEND — easement diagrams
-  title_search:         2,  // send if not text-extractable
-  council_rates:        2,  // dollar figures only visible in image
+  plan_of_subdivision:  1,
+  title_search:         2,
+  council_rates:        2,
   building_permits:     3,
   oc_certificate:       3,
   insurance:            3,
@@ -56,7 +53,6 @@ interface TokenBudget {
 }
 
 // ─── Python subprocess helpers ────────────────────────────────────────────────
-// pdfplumber + Pillow live in Python — we call them via child_process
 
 function py(script: string): string {
   const tmpPath = join(tmpdir(), `owl_${Date.now()}_${Math.random().toString(36).slice(2)}.py`)
@@ -82,12 +78,7 @@ with pdfplumber.open(${JSON.stringify(pdfPath)}) as pdf:
   return JSON.parse(out.trim())
 }
 
-// ─── STEP 2: Generate thumbnails at dynamic DPI ───────────────────────────────
-// Dynamic DPI fills the Call 1 token budget exactly regardless of page count.
-// Formula: tokens_per_page = (SAFE_LIMIT - overhead) / page_count
-//          pixel_area      = tokens_per_page * 750  (Anthropic's token formula)
-//          width           = sqrt(pixel_area / 1.414)  (A4 ratio)
-//          dpi             = width / 8.27  (A4 width in inches)
+// ─── STEP 2: Generate thumbnails ─────────────────────────────────────────────
 
 function generateThumbnails(pdfPath: string, pageCount: number): string[] {
   const tokensPerPage = Math.max(85, Math.min(
@@ -120,7 +111,7 @@ print(json.dumps(results))
   return JSON.parse(out.trim())
 }
 
-// ─── STEP 3: Extract all page text ────────────────────────────────────────────
+// ─── STEP 3: Extract all page text ───────────────────────────────────────────
 
 function extractAllText(pdfPath: string): Record<number, string> {
   const out = py(`
@@ -141,7 +132,7 @@ print(json.dumps(result))
   return result
 }
 
-// ─── STEP 4: Render specific pages at full resolution ─────────────────────────
+// ─── STEP 4: Render full-res pages ───────────────────────────────────────────
 
 function renderFullResPages(pdfPath: string, pages: number[]): Record<number, string> {
   if (pages.length === 0) return {}
@@ -168,7 +159,9 @@ print(json.dumps(result))
 
 // ─── CALL 1: Document Mapping ─────────────────────────────────────────────────
 
-const CALL1_SYSTEM = `You are a Victorian property document classifier. You receive thumbnail images of every page in a property document (S32 Vendor Statement and/or Contract of Sale).
+const CALL1_SYSTEM = `You are a Victorian property document classifier.
+
+You receive thumbnail images of every page in a property document (S32 Vendor Statement and/or Contract of Sale).
 
 DOCUMENT TYPES to identify:
 contract_of_sale      — Contract pages: particulars, general conditions, special conditions, guarantee
@@ -252,7 +245,8 @@ function fallbackClassification(pageCount: number): PageIndex[] {
 
 const BOILERPLATE_MARKERS = [
   'Delivered from the LANDATA',
-  'Copyright State of Victoria. No part',
+  'Copyright State of Victoria.',
+  'No part',
   'The document following this cover sheet',
   'consumer.vic.gov.au/duediligencechecklist',
 ]
@@ -269,7 +263,6 @@ function buildTokenBudget(
   const imagePages: Array<{ page: number; doc_type: string; priority: number }> = []
   const skippedPages: Array<{ page: number; doc_type: string; reason: string }> = []
 
-  // ── Text pages: calculate token cost, compress boilerplate ──
   let textTokens = 0
   for (const entry of pageIndex) {
     if (entry.send_as !== 'text') continue
@@ -280,14 +273,12 @@ function buildTokenBudget(
       continue
     }
 
-    // Strip pure boilerplate pages
     const isBoilerplate = BOILERPLATE_MARKERS.some(m => text.includes(m)) && text.length < 500
     if (isBoilerplate) {
       skippedPages.push({ page: entry.page, doc_type: entry.doc_type, reason: 'boilerplate header/footer' })
       continue
     }
 
-    // General conditions: compress to tag (saves ~85% of tokens)
     const isGC = GC_PATTERN.test(text) && text.length > 800
     const effectiveChars = isGC ? Math.floor(text.length * 0.15) : text.length
     textTokens += Math.ceil(effectiveChars / CHARS_PER_TOKEN)
@@ -296,7 +287,6 @@ function buildTokenBudget(
 
   budget -= textTokens
 
-  // ── Image pages: allocate by priority until budget runs out ──
   const imageCandidates = pageIndex
     .filter(e => e.send_as === 'full_image')
     .map(e => ({
@@ -322,7 +312,7 @@ function buildTokenBudget(
   return { textPages, imagePages, skippedPages }
 }
 
-// ─── CALL 2: Full Analysis ─────────────────────────────────────────────────────
+// ─── CALL 2: Full Analysis ────────────────────────────────────────────────────
 
 const S32_SYSTEM = `You are PropertyOwl AI, a Victorian property document expert.
 
@@ -493,7 +483,6 @@ async function call2_analyse(
   const schema = pass === 's32' ? S32_SCHEMA : CONTRACT_SCHEMA
   const label  = pass === 's32' ? 'Section 32 Vendor Statement' : 'Contract of Sale'
 
-  // Which doc_types are relevant for this pass
   const relevant = pass === 's32'
     ? new Set(['section_32','title_search','plan_of_subdivision','council_rates',
                'water_statement','clearance_certificate','building_permits',
@@ -502,7 +491,6 @@ async function call2_analyse(
 
   const content: Anthropic.ContentBlockParam[] = []
 
-  // ── Text sections ──
   const textParts: string[] = []
   let currentType = ''
 
@@ -518,7 +506,6 @@ async function call2_analyse(
       currentType = entry.doc_type
     }
 
-    // Compress general conditions to tag
     if (GC_PATTERN.test(text) && text.length > 800) {
       textParts.push(`[Page ${pageNum}] <STANDARD_VIC_GENERAL_CONDITIONS/>`)
     } else {
@@ -530,7 +517,6 @@ async function call2_analyse(
     content.push({ type: 'text', text: textParts.join('\n') })
   }
 
-  // ── Full-res image sections ──
   for (const { page: pageNum, doc_type } of budget.imagePages) {
     const entry = pageIndex.find(e => e.page === pageNum)
     if (!entry || !relevant.has(entry.doc_type)) continue
@@ -548,7 +534,6 @@ async function call2_analyse(
     })
   }
 
-  // ── Skipped pages note ──
   if (budget.skippedPages.length > 0) {
     const note = budget.skippedPages.map(s => `p${s.page}:${s.doc_type}`).join(', ')
     content.push({ type: 'text', text: `\n[Skipped pages: ${note}]` })
@@ -559,8 +544,7 @@ async function call2_analyse(
     text: `\nAnalyse the above ${label}. Extract ALL exact figures. Return ONLY valid JSON, no markdown:\n${schema}`,
   })
 
-  if (content.length === 0 || (content.length === 1)) {
-    // Nothing relevant found for this pass
+  if (content.length === 0 || content.length === 1) {
     return pass === 's32'
       ? { document_type: 's32', risk_score: 1, risk_summary: 'Document content not found', red_flags: [], sections: {}, disclaimer: DISCLAIMER }
       : { document_type: 'contract', risk_score: 1, risk_summary: 'Document content not found', red_flags: [], sections: {}, disclaimer: DISCLAIMER }
@@ -576,7 +560,7 @@ async function call2_analyse(
   return parseJson(response, label)
 }
 
-// ─── Auto-split for oversized documents ───────────────────────────────────────
+// ─── Auto-split for oversized documents ──────────────────────────────────────
 
 async function call2_split(
   budget: TokenBudget,
@@ -587,7 +571,7 @@ async function call2_split(
   model: string,
   maxTokens: number
 ): Promise<any> {
-  const half = Math.ceil(budget.textPages.length / 2)
+  const half    = Math.ceil(budget.textPages.length / 2)
   const imgHalf = Math.ceil(budget.imagePages.length / 2)
 
   const [r1, r2] = await Promise.all([
@@ -605,12 +589,12 @@ async function call2_split(
   if (!r2) return r1
   return {
     ...r1,
-    risk_score: Math.max(r1.risk_score || 0, r2.risk_score || 0),
-    risk_summary: [r1.risk_summary, r2.risk_summary].filter(Boolean).join(' '),
-    red_flags:            [...(r1.red_flags || []),            ...(r2.red_flags || [])],
-    negotiation_points:   [...(r1.negotiation_points || []),   ...(r2.negotiation_points || [])],
-    conveyancer_questions:[...(r1.conveyancer_questions || []),...(r2.conveyancer_questions || [])],
-    positive_findings:    [...(r1.positive_findings || []),    ...(r2.positive_findings || [])],
+    risk_score:            Math.max(r1.risk_score || 0, r2.risk_score || 0),
+    risk_summary:          [r1.risk_summary, r2.risk_summary].filter(Boolean).join(' '),
+    red_flags:             [...(r1.red_flags || []),             ...(r2.red_flags || [])],
+    negotiation_points:    [...(r1.negotiation_points || []),    ...(r2.negotiation_points || [])],
+    conveyancer_questions: [...(r1.conveyancer_questions || []), ...(r2.conveyancer_questions || [])],
+    positive_findings:     [...(r1.positive_findings || []),     ...(r2.positive_findings || [])],
     sections: mergeSection(r1.sections, r2.sections),
   }
 }
@@ -627,8 +611,8 @@ function mergeSection(s1: any, s2: any): any {
 
 function estimateCall2Tokens(budget: TokenBudget, extractedText: Record<number, string>): number {
   const textTokens = budget.textPages.reduce((sum, p) => {
-    const text = extractedText[p] || ''
-    const isGC = GC_PATTERN.test(text) && text.length > 800
+    const text  = extractedText[p] || ''
+    const isGC  = GC_PATTERN.test(text) && text.length > 800
     const chars = isGC ? Math.floor(text.length * 0.15) : text.length
     return sum + Math.ceil(chars / CHARS_PER_TOKEN)
   }, 0)
@@ -636,7 +620,7 @@ function estimateCall2Tokens(budget: TokenBudget, extractedText: Record<number, 
 }
 
 function parseJson(response: Anthropic.Message, label: string): any {
-  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+  const raw     = response.content[0].type === 'text' ? response.content[0].text : ''
   const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
   try {
     return JSON.parse(cleaned)
@@ -649,13 +633,24 @@ function parseJson(response: Anthropic.Message, label: string): any {
   }
 }
 
+// ─── Risk score helper (module-level — fixes strict mode error) ───────────────
+
+const computeRiskScore = (flags: any[]): number => {
+  if (!flags || flags.length === 0) return 1
+  const raw = flags.reduce((sum: number, f: any) => {
+    if (f.severity === 'high')   return sum + 3.0
+    if (f.severity === 'medium') return sum + 1.5
+    return sum + 0.5
+  }, 0)
+  return Math.min(10, Math.max(1, Math.round(raw)))
+}
+
 // ─── Main Handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
   let tmpPdf: string | null = null
 
   try {
-    // Auth
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -669,22 +664,19 @@ export async function POST(request: NextRequest) {
       }, { status: 402 })
     }
 
-    // Parse request
-    const formData = await request.formData()
-    const file       = formData.get('file') as File
+    const formData  = await request.formData()
+    const file      = formData.get('file') as File
     const propertyId = formData.get('propertyId') as string
 
-    if (!file || !propertyId)          return NextResponse.json({ error: 'Missing file or propertyId' }, { status: 400 })
+    if (!file || !propertyId)           return NextResponse.json({ error: 'Missing file or propertyId' }, { status: 400 })
     if (file.type !== 'application/pdf') return NextResponse.json({ error: 'File must be a PDF' }, { status: 400 })
-    if (file.size > 50 * 1024 * 1024)  return NextResponse.json({ error: 'File must be under 50MB' }, { status: 400 })
+    if (file.size > 50 * 1024 * 1024)   return NextResponse.json({ error: 'File must be under 50MB' }, { status: 400 })
 
-    // LLM config
     const { data: llmConfig } = await supabase.from('app_settings').select('value').eq('key', 'llm_config').single()
     const config    = (llmConfig?.value as any) || {}
-    const model     = config.model     || 'claude-haiku-4-5-20251001'
+    const model     = config.model      || 'claude-haiku-4-5-20251001'
     const maxTokens = config.max_tokens || 8000
 
-    // Write PDF to tmp
     const buf = Buffer.from(await file.arrayBuffer())
     tmpPdf = join(tmpdir(), `owl_${Date.now()}.pdf`)
     writeFileSync(tmpPdf, buf)
@@ -692,12 +684,11 @@ export async function POST(request: NextRequest) {
     const totalPages = getPageCount(tmpPdf)
     console.log(`[PropertyOwl] ${totalPages} pages — model: ${model}`)
 
-    // Upload to storage
     const filePath = `${user.id}/${propertyId}/combined_${Date.now()}.pdf`
     await supabase.storage.from('property-documents')
       .upload(filePath, file, { contentType: 'application/pdf', upsert: true })
 
-    // ══ CALL 1: Thumbnail mapping ══════════════════════════════════════
+    // ══ CALL 1 ════════════════════════════════════════════════════════
     console.log('[PropertyOwl] Call 1 — generating thumbnails...')
     const thumbnails = generateThumbnails(tmpPdf, totalPages)
 
@@ -705,7 +696,7 @@ export async function POST(request: NextRequest) {
     const pageIndex = await call1_mapDocument(thumbnails, totalPages, model)
     console.log(`[PropertyOwl] Call 1 done — ${pageIndex.filter(p => p.send_as === 'full_image').length} image pages, ${pageIndex.filter(p => p.send_as === 'text').length} text pages`)
 
-    // ══ CALL 2 PREP ════════════════════════════════════════════════════
+    // ══ CALL 2 PREP ═══════════════════════════════════════════════════
     console.log('[PropertyOwl] Extracting text...')
     const extractedText = extractAllText(tmpPdf)
 
@@ -715,31 +706,19 @@ export async function POST(request: NextRequest) {
     console.log('[PropertyOwl] Rendering full-res image pages...')
     const fullResImages = renderFullResPages(tmpPdf, budget.imagePages.map(p => p.page))
 
-    // Auto-split check
-    const estTokens = estimateCall2Tokens(budget, extractedText)
+    const estTokens  = estimateCall2Tokens(budget, extractedText)
     const needsSplit = estTokens > SAFE_TOKEN_LIMIT
-    const analyser = needsSplit ? call2_split : call2_analyse
+    const analyser   = needsSplit ? call2_split : call2_analyse
     console.log(`[PropertyOwl] Call 2 est ${estTokens} tokens — ${needsSplit ? 'SPLIT' : 'single call'}`)
 
-    // ══ CALL 2: Analysis ═══════════════════════════════════════════════
+    // ══ CALL 2 ════════════════════════════════════════════════════════
     console.log('[PropertyOwl] Call 2 — S32 analysis...')
     const s32Analysis = await analyser(budget, extractedText, fullResImages, pageIndex, 's32', model, maxTokens)
 
     console.log('[PropertyOwl] Call 2 — Contract analysis...')
     const contractAnalysis = await analyser(budget, extractedText, fullResImages, pageIndex, 'contract', model, maxTokens)
 
-    // ══ SAVE RESULTS ═══════════════════════════════════════════════════
-    // Deterministic risk score — override Claude's self-reported number.
-    // high=3pts, medium=1.5pts, low=0.5pts — capped at 10, min 1.
-    function computeRiskScore(flags: any[]): number {
-      if (!flags || flags.length === 0) return 1
-      const raw = flags.reduce((sum: number, f: any) => {
-        if (f.severity === 'high')   return sum + 3.0
-        if (f.severity === 'medium') return sum + 1.5
-        return sum + 0.5
-      }, 0)
-      return Math.min(10, Math.max(1, Math.round(raw)))
-    }
+    // ══ SAVE RESULTS ══════════════════════════════════════════════════
     const s32Score      = computeRiskScore(s32Analysis.red_flags ?? [])
     const contractScore = computeRiskScore(contractAnalysis.red_flags ?? [])
     s32Analysis.risk_score      = s32Score
@@ -762,19 +741,26 @@ export async function POST(request: NextRequest) {
 
     const combinedRisk = Math.max(s32Score, contractScore)
     await supabase.from('properties').update({
-      s32_reviewed: true, risk_score: combinedRisk,
-      s32_file_path: filePath, s32_uploaded_at: new Date().toISOString(),
-      contract_file_path: filePath, contract_uploaded_at: new Date().toISOString(),
+      s32_reviewed:           true,
+      risk_score:             combinedRisk,
+      s32_file_path:          filePath,
+      s32_uploaded_at:        new Date().toISOString(),
+      contract_file_path:     filePath,
+      contract_uploaded_at:   new Date().toISOString(),
     }).eq('id', propertyId)
 
     await supabase.from('activity_log').insert({
       user_id: user.id,
       event_type: 'report_run',
       event_detail: {
-        property_id: propertyId, total_pages: totalPages,
-        text_pages: budget.textPages.length, image_pages: budget.imagePages.length,
-        skipped_pages: budget.skippedPages.length, auto_split: needsSplit,
-        estimated_tokens: estTokens, s32_risk: s32Analysis.risk_score,
+        property_id: propertyId,
+        total_pages: totalPages,
+        text_pages:  budget.textPages.length,
+        image_pages: budget.imagePages.length,
+        skipped_pages: budget.skippedPages.length,
+        auto_split:    needsSplit,
+        estimated_tokens: estTokens,
+        s32_risk:      s32Analysis.risk_score,
         contract_risk: contractAnalysis.risk_score,
       },
     })
@@ -785,10 +771,10 @@ export async function POST(request: NextRequest) {
       contractAnalysis,
       meta: {
         totalPages,
-        textPages: budget.textPages.length,
-        imagePages: budget.imagePages.length,
+        textPages:    budget.textPages.length,
+        imagePages:   budget.imagePages.length,
         skippedPages: budget.skippedPages.length,
-        autoSplit: needsSplit,
+        autoSplit:    needsSplit,
         estimatedTokens: estTokens,
       },
     })
