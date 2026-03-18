@@ -567,7 +567,7 @@ if __name__ == '__main__':
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient()
+  const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 

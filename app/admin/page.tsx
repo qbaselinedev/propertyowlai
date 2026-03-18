@@ -12,7 +12,7 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string 
 }
 
 export default async function AdminDashboard() {
-  const supabase = await createClient()
+  const supabase = createClient()
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)

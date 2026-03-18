@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 
 export default async function AdminReportsPage() {
-  const supabase = await createClient()
+  const supabase = createClient()
 
   const { data: reports } = await supabase
     .from('reports')
