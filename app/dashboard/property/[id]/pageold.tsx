@@ -307,74 +307,94 @@ export default function PropertyDetailPage() {
   const issueCount = allFlags.filter(f => f.severity === 'high' || f.severity === 'medium').length
 
   return (
-    <div className="space-y-2 pb-10">
+    <div className="space-y-5 pb-10">
 
-      {/* ── Demo banner ── */}
+      {/* ── Demo banner — static, sits at top of page content ── */}
       {isDemo && (
-        <div className="bg-[#1A1A1A] flex items-center justify-between px-5 py-2 rounded-xl">
+        <div className="bg-[#1A1A1A] flex items-center justify-between px-6 py-2 rounded-xl">
           <div className="flex items-center gap-3">
-            <span className="text-sm">🦉</span>
+            <span className="text-base">🦉</span>
             <span className="text-xs font-bold text-white">Demo property</span>
             <span className="text-xs text-gray-400">— sample data, not a real listing</span>
           </div>
-          <a href="/dashboard/buy-credits" className="text-xs font-semibold text-white px-3 py-1.5 rounded-lg hover:opacity-90" style={{background:'#E8001D'}}>
+          <a href="/dashboard/buy-credits"
+            className="text-xs font-semibold text-white px-3 py-1.5 rounded-lg hover:opacity-90"
+            style={{background:'#E8001D'}}>
             Get started →
           </a>
         </div>
       )}
 
-      {/* ── Property Header — compact ── */}
+      {/* ── Property Header ── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div style={{ height: 3, background: REA }} />
-        <div className="px-5 py-3">
-          <div className="flex items-center justify-between gap-4">
+        <div style={{ height: 4, background: REA }} />
+        <div className="p-5 lg:p-6">
+          <div className="flex flex-col xl:flex-row xl:items-start gap-6">
+
             {/* Left */}
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: REA }}>Prospective Property</p>
-              <h1 className="text-xl font-extrabold text-gray-900 leading-tight tracking-tight">
+            <div className="flex-shrink-0 min-w-0">
+              <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: REA }}>Prospective Property</p>
+              <h1 className="text-2xl lg:text-3xl font-extrabold text-gray-900 leading-tight tracking-tight">
                 {property.address}
-                {isDemo && <span className="text-sm font-normal text-gray-400 ml-2">(Fictitious address — demo only)</span>}
+                {isDemo && <span className="text-base font-normal text-gray-400 ml-2">(Fictitious address — demo only)</span>}
               </h1>
-              <p className="text-gray-500 text-xs mt-0.5">{property.suburb}{property.postcode ? `, Victoria ${property.postcode}` : ''}</p>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {(property.s32_reviewed || !!s32) && <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ S32 Reviewed</span>}
-                {!!contract ? <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ Contract Reviewed</span>
-                  : <span className="text-[11px] bg-gray-100 text-gray-500 font-bold px-2 py-0.5 rounded-full">⏳ Contract Pending</span>}
-                {!!scan ? <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ Online Scan</span>
-                  : <span className="text-[11px] bg-gray-100 text-gray-500 font-bold px-2 py-0.5 rounded-full">⏳ Scan Pending</span>}
-                {issueCount > 0 && <button onClick={() => { setActiveTab('Contract Scan'); setContractSubTab('Risk Analysis') }} className="text-[11px] bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full hover:bg-red-200 transition-colors">⚠ {issueCount} item{issueCount !== 1 ? 's' : ''} to review</button>}
+              <p className="text-gray-500 text-sm mt-1">{property.suburb}{property.postcode ? `, Victoria ${property.postcode}` : ''}</p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {(property.s32_reviewed || !!s32) && <span className="text-xs bg-emerald-100 text-emerald-700 font-bold px-2.5 py-1 rounded-full">✓ S32 Reviewed</span>}
+                {!!contract ? <span className="text-xs bg-emerald-100 text-emerald-700 font-bold px-2.5 py-1 rounded-full">✓ Contract Reviewed</span>
+                  : <span className="text-xs bg-gray-100 text-gray-500 font-bold px-2.5 py-1 rounded-full">⏳ Contract Pending</span>}
+                {issueCount > 0 && <button onClick={() => setActiveTab('Risk Analysis')} className="text-xs bg-red-100 text-red-700 font-bold px-2.5 py-1 rounded-full hover:bg-red-200 transition-colors">⚠ {issueCount} item{issueCount !== 1 ? 's' : ''} to review</button>}
               </div>
             </div>
+
             {/* Right — meta */}
-            <div className="flex gap-5 flex-shrink-0">
+            <div className="flex gap-6 flex-wrap xl:ml-auto">
               {property.price && (
-                <div className="text-right">
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-0">Asking</p>
-                  <p className="text-lg font-black text-gray-900">${property.price.toLocaleString()}</p>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-0.5">Asking</p>
+                  <p className="text-xl font-black text-gray-900">${property.price.toLocaleString()}</p>
                 </div>
               )}
               {property.property_type && (
-                <div className="text-right">
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-0">Type</p>
-                  <p className="text-lg font-black text-gray-900 capitalize">{property.property_type}</p>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-0.5">Type</p>
+                  <p className="text-xl font-black text-gray-900 capitalize">{property.property_type}</p>
                 </div>
               )}
               {riskScore && (
-                <div className="text-right">
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-0">Risk</p>
-                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-semibold ${
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-0.5">Risk</p>
+                  <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-semibold ${
                     riskScore >= 8 ? 'bg-red-50' : riskScore >= 5 ? 'bg-amber-50' : 'bg-emerald-50'
                   }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full inline-block ${
+                    <span className={`w-2 h-2 rounded-full inline-block ${
                       riskScore >= 8 ? 'bg-red-400' : riskScore >= 5 ? 'bg-amber-400' : 'bg-emerald-400'
                     }`} />
-                    <p className={`text-xs font-semibold ${riskColor}`}>{riskLabel}</p>
+                    <p className={`text-sm font-semibold ${riskColor}`}>{riskLabel}</p>
                   </div>
                 </div>
               )}
             </div>
           </div>
         </div>
+
+        {/* Checklist row */}
+        <div className="border-t border-gray-100 px-5 lg:px-6 py-4">
+          <div className="flex gap-6 xl:gap-8 overflow-x-auto">
+            <ChecklistPanel s32={s32} contract={contract} onNavigate={(t) => {
+              setActiveTab('Contract Scan')
+              setContractSubTab(t)
+            }} />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Sticky disclaimer banner ── */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+        <span className="text-amber-600 text-sm flex-shrink-0">⚖️</span>
+        <p className="text-xs text-amber-700">
+          <strong>Not legal advice.</strong> PropertyOwl AI is an AI-assisted review tool only. Always engage a licensed Victorian conveyancer before signing any documents or paying any deposit.
+        </p>
       </div>
 
       {/* ── ONE unified tab box ── */}
@@ -382,67 +402,60 @@ export default function PropertyDetailPage() {
            style={{borderColor: activeTab === 'Contract Scan' ? '#E8001D' : '#334155'}}>
 
         {/* Row 1: main parent tabs + action buttons */}
-        <div className="flex items-center justify-between px-3 pt-0"
-             style={{background: activeTab === 'Contract Scan' ? '#FFF8F8' : '#F8FAFC',
-                     borderBottom: `2px solid ${activeTab === 'Contract Scan' ? '#FECACA' : '#CBD5E1'}`}}>
-          <div className="flex gap-1 py-2">
+        <div className="flex items-center justify-between border-b border-gray-100 bg-white px-3 pt-0">
+          <div className="flex">
             {TABS.map(tab => {
               const isActive = activeTab === tab
               const tabColor = tab === 'Contract Scan' ? '#E8001D' : '#334155'
               return (
                 <button key={tab} onClick={() => setActiveTab(tab)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all whitespace-nowrap rounded-lg"
-                  style={isActive ? {
-                    background: tabColor,
-                    color: 'white',
-                    boxShadow: `0 2px 8px ${tabColor}44`
-                  } : {
-                    color: '#9CA3AF',
-                    background: 'transparent'
-                  }}>
-                  <span>{tab === 'Contract Scan' ? '📄' : '🔍'}</span>
-                  <span>{tab}</span>
-                  {isActive && tab === 'Contract Scan' && (s32 || contract) && <span className="text-[10px] bg-white/30 px-1.5 py-0.5 rounded-full font-bold">✓</span>}
-                  {isActive && tab === 'Online Scan' && scan && <span className="text-[10px] bg-white/30 px-1.5 py-0.5 rounded-full font-bold">✓</span>}
-                  {!isActive && tab === 'Contract Scan' && (s32 || contract) && <span className="text-[10px] text-emerald-500 font-bold">✓</span>}
-                  {!isActive && tab === 'Online Scan' && scan && <span className="text-[10px] text-emerald-500 font-bold">✓</span>}
+                  className={`flex items-center gap-2 px-5 py-3.5 text-sm font-bold transition-all whitespace-nowrap border-b-2 -mb-px ${
+                    isActive ? '' : 'border-transparent text-gray-400 hover:text-gray-700'
+                  }`}
+                  style={isActive ? { borderColor: tabColor, color: tabColor } : {}}>
+                  {tab === 'Contract Scan' ? '📄' : '🗺️'} {tab}
+                  {tab === 'Contract Scan' && (s32 || contract) && <span className="text-xs text-emerald-500 font-bold">✓</span>}
+                  {tab === 'Online Scan' && scan && <span className="text-xs text-emerald-500 font-bold">✓</span>}
                 </button>
               )
             })}
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2">
-            {/* Legal disclaimer inline */}
-            <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg hidden lg:block">
-              ⚖️ Not legal advice — always engage a conveyancer
-            </span>
-
+          <div className="flex items-center gap-2 px-2">
             {activeTab === 'Contract Scan' && (s32 || contract) && (
-              <button onClick={handleDownloadPack} disabled={downloading}
-                className="flex items-center gap-1.5 text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-all disabled:opacity-50"
-                style={{background: '#E8001D'}}>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 10h10" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                {downloading ? '…' : 'Contract Scan PDF'}
+              <button
+                onClick={handleDownloadPack}
+                disabled={downloading}
+                className="text-xs font-bold text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                {downloading ? '…' : '↓ Conveyancer Pack'}
               </button>
             )}
             {activeTab === 'Contract Scan' && (
-              <button onClick={triggerUpload} disabled={!!uploading}
-                className="text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-                style={{background: '#1A1A1A'}}>
-                {uploading ? '⟳ Processing…' : (s32 || contract) ? '↑ Re-analyse' : '↑ Upload Documents'}
+              <button
+                onClick={triggerUpload}
+                disabled={!!uploading}
+                className="text-xs font-bold text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                style={{background: REA}}
+              >
+                {uploading ? '⟳ Processing…' : (s32 || contract) ? '↑ Upload / Re-analyse' : '↑ Upload Documents'}
               </button>
             )}
             {activeTab === 'Online Scan' && scan && (
               <>
-                <button onClick={handleDownloadScanPdf} disabled={downloadingScan}
-                  className="flex items-center gap-1.5 text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-all disabled:opacity-50"
-                  style={{background: '#E8001D'}}>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 10h10" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  {downloadingScan ? '…' : 'Online Scan Report PDF'}
+                <button
+                  onClick={handleDownloadScanPdf}
+                  disabled={downloadingScan}
+                  className="text-xs font-bold text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  {downloadingScan ? '…' : '↓ Scan Report PDF'}
                 </button>
-                <button onClick={handleRunScan} disabled={scanning || credits < 1}
-                  className="text-xs font-bold text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40">
+                <button
+                  onClick={handleRunScan}
+                  disabled={scanning || credits < 1}
+                  className="text-xs font-bold text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
+                >
                   ↺ Re-scan · 1 credit
                 </button>
               </>
@@ -450,16 +463,7 @@ export default function PropertyDetailPage() {
           </div>
         </div>
 
-        {/* Row 2: checklist grid (inside Contract Scan tab, above sub-tabs) */}
-        {activeTab === 'Contract Scan' && (s32 || contract) && (
-          <div className="border-b border-gray-100 bg-white px-4 py-3">
-            <ChecklistPanel s32={s32} contract={contract} onNavigate={(t: string) => {
-              setContractSubTab(t)
-            }} />
-          </div>
-        )}
-
-        {/* Row 3: contract sub-tabs */}
+        {/* Row 2: contract sub-tabs */}
         {activeTab === 'Contract Scan' && (s32 || contract) && (
           <div className="flex border-b border-gray-100 bg-white px-3">
             {CONTRACT_SUBTABS.map(sub => (
@@ -475,7 +479,7 @@ export default function PropertyDetailPage() {
           </div>
         )}
 
-        {/* uploading notice */}
+        {/* Row 3: uploading notice */}
         {uploading && (
           <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex items-center gap-3">
             <span className="text-amber-500 text-base animate-spin inline-block">⟳</span>
@@ -483,13 +487,12 @@ export default function PropertyDetailPage() {
           </div>
         )}
 
-        {/* Tab content */}
-        <div className="p-5 space-y-4"
-             style={{background: activeTab === 'Contract Scan' ? '#FFF9F9' : '#F8FAFC'}}>
+        {/* Row 4: tab content */}
+        <div className="bg-gray-50 p-5 space-y-4">
           {activeTab === 'Contract Scan' && !(s32 || contract) && (
             <ContractScanEmptyState credits={credits} onUpload={triggerUpload} />
           )}
-          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Overview'          && <OverviewTab s32={s32} contract={contract} property={property} credits={credits} onUpload={triggerUpload} onNavigate={(t) => setContractSubTab(t)} onDownload={handleDownloadPack} />}
+          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Overview'          && <OverviewTab s32={s32} contract={contract} property={property} credits={credits} onUpload={triggerUpload} onNavigate={(t: string) => setContractSubTab(t)} onDownload={handleDownloadPack} />}
           {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'S32 Review'        && <S32ReviewTab s32={s32} onUpload={triggerUpload} credits={credits} />}
           {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Risk Analysis'     && <RiskAnalysisTab s32={s32} contract={contract} property={property} />}
           {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Negotiation Brief' && <NegotiationBriefTab s32={s32} contract={contract} />}
@@ -764,16 +767,8 @@ function S32ReviewTab({ s32, onUpload, credits }: { s32: S32Analysis | null; onU
         )}
       </div>
 
-      {/* Right: Positive findings first, then S32 sections */}
+      {/* Right: S32 sections */}
       <div className="space-y-4">
-        {(s32.positive_findings ?? []).length > 0 && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-            <p className="text-xs font-bold text-emerald-700 mb-2">✅ Positive findings — nothing of concern</p>
-            {(s32.positive_findings ?? []).map((f, i) => (
-              <p key={i} className="text-xs text-emerald-700 leading-relaxed mt-1">• {f}</p>
-            ))}
-          </div>
-        )}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-xs font-extrabold text-gray-700 uppercase tracking-wider mb-3">S32 Sections</p>
           {Object.entries(s32.sections ?? {}).map(([key, section]: [string, any]) => {
@@ -784,25 +779,25 @@ function S32ReviewTab({ s32, onUpload, credits }: { s32: S32Analysis | null; onU
               easements_and_covenants: 'Easements & Covenants', building_permits: 'Building Permits',
               owners_corporation: 'Owners Corporation', outgoings: 'Outgoings', vendor_disclosure: 'Vendor Disclosure'
             }
-            const statusLabel: Record<string, string> = {
-              clear: 'Clear', issues: 'Issues noted', issues_found: 'Issues noted',
-              not_provided: 'Not provided', not_applicable: 'Not applicable', incomplete: 'Incomplete'
-            }
             return (
               <div key={key} className="flex items-start gap-2 mb-3 pb-3 border-b border-gray-100 last:border-0 last:mb-0 last:pb-0">
                 <span className={`w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5 ${sc.bg} ${sc.color}`}>{sc.icon}</span>
                 <div>
                   <p className="text-xs font-semibold text-gray-800">{sectionNames[key] ?? key}</p>
-                  <p className="text-xs text-gray-500 leading-snug mt-0.5">
-                    {section.summary && section.summary.length < 200
-                      ? section.summary
-                      : statusLabel[section.status] ?? section.status}
-                  </p>
+                  <p className="text-xs text-gray-500 leading-snug mt-0.5">{section.summary}</p>
                 </div>
               </div>
             )
           })}
         </div>
+        {(s32.positive_findings ?? []).length > 0 && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+            <p className="text-xs font-bold text-emerald-700 mb-2">✅ Positive findings</p>
+            {(s32.positive_findings ?? []).map((f, i) => (
+              <p key={i} className="text-xs text-emerald-700 leading-relaxed mt-1">• {f}</p>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -821,8 +816,9 @@ function RiskAnalysisTab({ s32, contract, property }: { s32: S32Analysis | null;
   if (!s32 && !contract) return <NoAnalysis msg="Upload documents to see a risk analysis." />
 
   return (
-    <div className="space-y-4">
-      <div className="flex gap-2 flex-wrap">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="lg:col-span-2 space-y-4">
+        <div className="flex gap-2 flex-wrap">
           {[
             { k: 'all', label: `All (${allFlags.length})` },
             { k: 'high', label: `🔴 High (${highFlags.length})` },
@@ -862,6 +858,28 @@ function RiskAnalysisTab({ s32, contract, property }: { s32: S32Analysis | null;
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
           <p className="text-xs text-amber-700 leading-relaxed">⚖️ <strong>Not legal advice.</strong> These are areas for further investigation. Always engage a licensed Victorian conveyancer before signing.</p>
         </div>
+      </div>
+
+      {/* Right: S32 sections */}
+      <div className="space-y-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs font-extrabold text-gray-700 uppercase tracking-wider mb-3">S32 Sections</p>
+          {Object.entries(s32?.sections ?? {}).map(([key, section]: [string, any]) => {
+            if (!section) return null
+            const sc = stc[section.status] ?? stc.not_provided
+            const csl: Record<string,string> = { title_and_ownership: 'Title & Ownership', planning_and_zoning: 'Planning & Zoning', easements_and_covenants: 'Easements & Covenants', building_permits: 'Building Permits', owners_corporation: 'Owners Corporation', outgoings: 'Outgoings', vendor_disclosure: 'Vendor Disclosure' }
+            return (
+              <div key={key} className="flex items-start gap-2 mb-3 pb-3 border-b border-gray-100 last:border-0 last:mb-0 last:pb-0">
+                <span className={`w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5 ${sc.bg} ${sc.color}`}>{sc.icon}</span>
+                <div>
+                  <p className="text-xs font-semibold text-gray-800">{csl[key] ?? key}</p>
+                  <p className="text-xs text-gray-500 leading-snug mt-0.5">{section.summary}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
@@ -1132,55 +1150,60 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
 
   return (
     <div className="space-y-4">
-      {/* Header card — compact, badge + summary merged */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
-        {/* Badge + council + summary all in one line */}
-        <div className="flex items-start gap-2 flex-wrap">
-          <span className="text-[10px] font-black text-white px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5" style={{background:'#334155'}}>ONLINE SCAN</span>
-          {scan.council && <span className="text-xs text-gray-500 flex-shrink-0 mt-0.5">· {scan.council}</span>}
-          {scan.scan_date && <span className="text-xs text-gray-400 flex-shrink-0 mt-0.5">· {new Date(scan.scan_date).toLocaleDateString('en-AU', {day:'numeric',month:'short',year:'numeric'})}</span>}
-          {scan.summary && (
-            <span className={`text-xs text-gray-600 leading-relaxed ${summaryExpanded ? '' : 'line-clamp-1'}`}>
-              — {scan.summary}
-            </span>
-          )}
-          {scan.summary && scan.summary.length > 100 && (
-            <button onClick={() => setSummaryExpanded(e => !e)}
-              className="text-[10px] font-semibold text-red-600 hover:underline flex-shrink-0 mt-0.5">
-              {summaryExpanded ? '▲ less' : '▼ more'}
-            </button>
-          )}
+      {/* Header card */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+        {/* Date + address */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-black text-white px-2 py-0.5 rounded-full" style={{background:'#334155'}}>ONLINE SCAN</span>
+              {scan.scan_date && <span className="text-xs text-gray-400">{new Date(scan.scan_date).toLocaleDateString('en-AU', {day:'numeric',month:'short',year:'numeric'})}</span>}
+              {scan.council && <span className="text-xs text-gray-400">· {scan.council}</span>}
+            </div>
+            <h2 className="text-lg font-black text-gray-900">{scan.address}{scan.suburb ? `, ${scan.suburb} ${scan.state || 'VIC'} ${scan.postcode || ''}` : ''}</h2>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <button onClick={onRunScan} disabled={credits < 1} className="text-xs text-gray-500 hover:text-red-600 disabled:opacity-40 whitespace-nowrap">↺ Re-scan · 1 credit</button>
+            {credits < 5 && <p className="text-xs text-gray-400 mt-0.5">{credits} credits left <a href="/dashboard/buy-credits" className="text-red-500 font-semibold hover:underline">Buy more</a></p>}
+          </div>
         </div>
 
-        {/* Stats — compact clickable filter buttons */}
+        {/* Summary */}
+        {scan.summary && (
+          <div className="bg-gray-50 rounded-xl px-4 py-3">
+            <p className={`text-sm text-gray-700 leading-relaxed ${summaryExpanded ? '' : 'line-clamp-2'}`}>{scan.summary}</p>
+            {scan.summary.length > 150 && (
+              <button onClick={() => setSummaryExpanded(e => !e)}
+                className="text-xs font-semibold text-red-600 hover:underline mt-1">
+                {summaryExpanded ? '▲ Show less' : '▼ Read more'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Stats */}
         <div className="grid grid-cols-4 gap-2">
           {[
-            {sev:'high',  n:high.length,   label:'High priority',  color:'#DC2626', bg:'#FFF5F5', border:'#FCCACA'},
-            {sev:'medium',n:medium.length, label:'Worth reviewing', color:'#D97706', bg:'#FFFBF0', border:'#F5DFA0'},
-            {sev:'low',   n:low.length+info.length, label:'Notes', color:'#6B7280', bg:'#F9FAFB', border:'#E5E7EB'},
-            {sev:'clear', n:(scan.positive_findings||[]).length, label:'Nothing noted', color:'#059669', bg:'#F0FDF4', border:'#A7F3D0'},
-          ].map(({sev,n,label,color,bg,border}) => {
-            const isActive = filterSev === sev
-            return (
-              <button key={label}
-                onClick={() => setFilterSev(isActive ? 'all' : sev)}
-                className="rounded-lg px-2 py-2 text-center transition-all cursor-pointer hover:opacity-80"
-                style={{
-                  background: n>0 ? bg : '#FAFAFA',
-                  border: `1.5px solid ${isActive ? color : (n>0 ? border : '#F3F4F6')}`,
-                  boxShadow: isActive ? `0 0 0 3px ${color}22` : 'none',
-                }}>
-                <p className="text-lg font-black leading-none" style={{color:n>0?color:'#D1D5DB'}}>{n}</p>
-                <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">{label}</p>
-                {isActive && <p className="text-[9px] font-bold mt-0.5" style={{color}}>● filtering</p>}
-              </button>
-            )
-          })}
+            {sev:'high',  n:high.length,   label:'High priority',  color:'#DC2626',bg:'#FFF5F5'},
+            {sev:'medium',n:medium.length, label:'Worth reviewing', color:'#D97706',bg:'#FFFBF0'},
+            {sev:'low',   n:low.length+info.length, label:'Notes', color:'#6B7280',bg:'#F9FAFB'},
+            {sev:'clear', n:(scan.positive_findings||[]).length, label:'Nothing noted', color:'#059669',bg:'#F0FDF4'},
+          ].map(({sev,n,label,color,bg}) => (
+            <button key={label}
+              onClick={() => setFilterSev(filterSev===sev?'all':sev)}
+              className={`rounded-xl p-3 text-center border transition-all cursor-pointer hover:opacity-80 ${
+                filterSev===sev ? 'ring-2 ring-offset-1' : 'border-gray-100'
+              }`}
+              style={{background:n>0?bg:'#FAFAFA'}}>
+              <p className="text-xl font-black leading-none" style={{color:n>0?color:'#D1D5DB'}}>{n}</p>
+              <p className="text-xs text-gray-500 mt-1 leading-tight">{label}</p>
+            </button>
+          ))}
         </div>
         {filterSev !== 'all' && (
-          <p className="text-xs text-gray-400">
-            Showing <strong className="text-gray-600">{sevCfg[filterSev]?.label ?? filterSev}</strong> only
-            <button onClick={() => setFilterSev('all')} className="ml-2 text-red-500 hover:underline font-semibold">Clear ×</button>
+          <p className="text-xs text-gray-400 mt-2">
+            Filtering by <strong className="text-gray-600">{sevCfg[filterSev]?.label ?? filterSev}</strong>
+            <button onClick={() => setFilterSev('all')} className="ml-2 text-red-500 hover:underline font-semibold">Clear filter</button>
           </p>
         )}
       </div>
