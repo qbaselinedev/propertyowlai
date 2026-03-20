@@ -143,7 +143,7 @@ export default function HomePage() {
             <span style={{fontSize:"11px", fontWeight:700, color:"#B52020", letterSpacing:"0.06em", textTransform:"uppercase"}}>Victoria's only AI property analyser</span>
           </div>
           <h1 style={{fontSize:"44px", fontWeight:800, lineHeight:1.08, letterSpacing:"-0.04em", marginBottom:"18px", fontFamily:"Georgia,serif"}}>
-            Property 360 - Deep Online & contract Scan <span style={{color:R}}>in 2 minutes using AI.</span>
+            Property 360 - Deep Online & Contract Scan <span style={{color:R}}>in 2 minutes using AI.</span>
           </h1>
           <p style={{fontSize:"16px", color:"#555", lineHeight:1.7, marginBottom:"32px", maxWidth:"420px"}}>
             Upload your Section 32 and Contract of Sale. PropertyOwl surfaces every risk, fee and detail — so you walk into every conversation with your conveyancer already knowing the right questions to ask.
