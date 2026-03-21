@@ -236,28 +236,38 @@ export default function PropertyDetailPage() {
   }
 
   async function handleUpload(file: File) {
-    if (!property) return
-    setUploading('Uploading document…')
-    try {
-      const path = `${property.id}/${Date.now()}_${file.name}`
-      const { error: upErr } = await supabase.storage.from('property-documents').upload(path, file)
-      if (upErr) throw upErr
-      setUploading('AI is reading your documents… this takes 60–90 seconds')
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ propertyId: property.id, filePath: path }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Analysis failed')
-      await load()
-    } catch (e: any) {
-      alert('Upload failed: ' + e.message)
-    } finally {
-      setUploading(null)
-      if (fileInput) fileInput.value = ''
-    }
+  if (!property) return
+  setUploading('Uploading document…')
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Not logged in')
+
+    const path = `${user.id}/${property.id}/${Date.now()}_${file.name}`
+    const { error: upErr } = await supabase.storage
+      .from('property-documents')
+      .upload(path, file)
+    if (upErr) throw upErr
+
+    setUploading('AI is reading your documents… this takes 60–90 seconds')
+
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('propertyId', property.id)
+
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      body: formData,
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error ?? 'Analysis failed')
+    await load()
+  } catch (e: any) {
+    alert('Upload failed: ' + e.message)
+  } finally {
+    setUploading(null)
+    if (fileInput) fileInput.value = ''
   }
+}
 
   async function handleRunScan() {
     if (!property) return
