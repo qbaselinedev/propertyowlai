@@ -5,7 +5,7 @@ import { writeFileSync, unlinkSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-import { createCanvas } from 'canvas'
+import { createCanvas } from '@napi-rs/canvas'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
