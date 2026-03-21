@@ -251,7 +251,7 @@ export default function PropertyDetailPage() {
     setUploading('AI is reading your documents… this takes 60–90 seconds')
 
     const formData = new FormData()
-    formData.append('filePath', path)
+    formData.append('file', file)
     formData.append('propertyId', property.id)
 
     const res = await fetch('/api/analyze', {
