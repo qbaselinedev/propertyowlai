@@ -664,31 +664,29 @@ export async function POST(request: NextRequest) {
       }, { status: 402 })
     }
 
-    const formData   = await request.formData()
-    const filePath   = formData.get('filePath') as string
+    const formData  = await request.formData()
+    const file      = formData.get('file') as File
     const propertyId = formData.get('propertyId') as string
 
-    if (!filePath || !propertyId)
-      return NextResponse.json({ error: 'Missing filePath or propertyId' }, { status: 400 })
+    if (!file || !propertyId)           return NextResponse.json({ error: 'Missing file or propertyId' }, { status: 400 })
+    if (file.type !== 'application/pdf') return NextResponse.json({ error: 'File must be a PDF' }, { status: 400 })
+    if (file.size > 50 * 1024 * 1024)   return NextResponse.json({ error: 'File must be under 50MB' }, { status: 400 })
 
     const { data: llmConfig } = await supabase.from('app_settings').select('value').eq('key', 'llm_config').single()
     const config    = (llmConfig?.value as any) || {}
     const model     = config.model      || 'claude-haiku-4-5-20251001'
     const maxTokens = config.max_tokens || 8000
 
-    // Download the already-uploaded PDF from storage
-    const { data: fileData, error: dlError } = await supabase.storage
-      .from('property-documents')
-      .download(filePath)
-    if (dlError || !fileData)
-      return NextResponse.json({ error: 'Could not download file: ' + dlError?.message }, { status: 500 })
-
-    const buf = Buffer.from(await fileData.arrayBuffer())
+    const buf = Buffer.from(await file.arrayBuffer())
     tmpPdf = join(tmpdir(), `owl_${Date.now()}.pdf`)
     writeFileSync(tmpPdf, buf)
 
     const totalPages = getPageCount(tmpPdf)
     console.log(`[PropertyOwl] ${totalPages} pages — model: ${model}`)
+
+    const filePath = `${user.id}/${propertyId}/combined_${Date.now()}.pdf`
+    await supabase.storage.from('property-documents')
+      .upload(filePath, file, { contentType: 'application/pdf', upsert: true })
 
     // ══ CALL 1 ════════════════════════════════════════════════════════
     console.log('[PropertyOwl] Call 1 — generating thumbnails...')
