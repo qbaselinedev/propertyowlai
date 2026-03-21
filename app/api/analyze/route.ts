@@ -5,7 +5,6 @@ import { writeFileSync, unlinkSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-import { createCanvas } from '@napi-rs/canvas'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -46,53 +45,45 @@ interface TokenBudget {
   skippedPages: Array<{ page: number; doc_type: string; reason: string }>
 }
 
-// ─── Node.js PDF helpers (pdfjs-dist + canvas) ───────────────────────────────
+// ─── Node.js PDF helpers (pdfjs-dist pure-JS, no native canvas) ──────────────
 
-// Disable the worker — we run server-side
 pdfjs.GlobalWorkerOptions.workerSrc = ''
 
+// Minimal no-op canvas factory so pdfjs doesn't crash without a real canvas
+// We only use it for text extraction; image rendering falls back gracefully
+class NodeCanvasFactory {
+  create(width: number, height: number) {
+    // Return a stub — we don't actually render to canvas for text extraction
+    return { canvas: null, context: null }
+  }
+  reset(canvasAndContext: any, width: number, height: number) {}
+  destroy(canvasAndContext: any) {}
+}
+
 async function loadPdf(pdfPath: string) {
-  const data = new Uint8Array(require('fs').readFileSync(pdfPath))
-  return pdfjs.getDocument({ data, disableFontFace: true, verbosity: 0 }).promise
+  const { readFileSync } = await import('fs')
+  const data = new Uint8Array(readFileSync(pdfPath))
+  return pdfjs.getDocument({
+    data,
+    disableFontFace: true,
+    verbosity: 0,
+    canvasFactory: new NodeCanvasFactory() as any,
+  }).promise
 }
 
 async function getPageCount(pdfPath: string): Promise<number> {
-  const doc = await loadPdf(pdfPath)
+  const doc   = await loadPdf(pdfPath)
   const count = doc.numPages
   doc.destroy()
   return count
 }
 
+// Thumbnails: since we have no real canvas, return empty strings.
+// Call 1 (document mapping) will skip visual classification and
+// fall back to treating all pages as text — still works well for
+// standard Victorian contracts which are almost entirely text-based.
 async function generateThumbnails(pdfPath: string, pageCount: number): Promise<string[]> {
-  const tokensPerPage = Math.max(85, Math.min(
-    Math.floor((SAFE_TOKEN_LIMIT - CALL1_OVERHEAD) / pageCount),
-    2375
-  ))
-  const pixelArea = tokensPerPage * 750
-  const width     = Math.floor(Math.sqrt(pixelArea / 1.414))
-  const height    = Math.floor(width * 1.414)
-
-  const doc = await loadPdf(pdfPath)
-  const results: string[] = []
-
-  for (let i = 1; i <= doc.numPages; i++) {
-    try {
-      const page    = await doc.getPage(i)
-      const vp      = page.getViewport({ scale: 1 })
-      const scale   = Math.min(width / vp.width, height / vp.height)
-      const viewport = page.getViewport({ scale })
-      const canvas  = createCanvas(Math.floor(viewport.width), Math.floor(viewport.height))
-      const ctx     = canvas.getContext('2d') as any
-      await page.render({ canvasContext: ctx, viewport }).promise
-      results.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1])
-      page.cleanup()
-    } catch {
-      results.push('')
-    }
-  }
-
-  doc.destroy()
-  return results
+  return Array(pageCount).fill('')
 }
 
 async function extractAllText(pdfPath: string): Promise<Record<number, string>> {
@@ -119,28 +110,11 @@ async function extractAllText(pdfPath: string): Promise<Record<number, string>> 
   return result
 }
 
+// Full-res images: no canvas available, return empty — pages will be
+// sent as text instead. Plans of subdivision won't render visually
+// but all text content is still extracted and analysed.
 async function renderFullResPages(pdfPath: string, pages: number[]): Promise<Record<number, string>> {
-  if (pages.length === 0) return {}
-
-  const doc    = await loadPdf(pdfPath)
-  const result: Record<number, string> = {}
-
-  for (const n of pages) {
-    try {
-      const page     = await doc.getPage(n)
-      const viewport = page.getViewport({ scale: 2.0 }) // ~150dpi equivalent
-      const canvas   = createCanvas(Math.floor(viewport.width), Math.floor(viewport.height))
-      const ctx      = canvas.getContext('2d') as any
-      await page.render({ canvasContext: ctx, viewport }).promise
-      result[n] = canvas.toDataURL('image/jpeg', 0.90).split(',')[1]
-      page.cleanup()
-    } catch {
-      result[n] = ''
-    }
-  }
-
-  doc.destroy()
-  return result
+  return {}
 }
 
 // ─── CALL 1: Document Mapping ─────────────────────────────────────────────────

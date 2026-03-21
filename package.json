@@ -18,8 +18,7 @@
     "pdf-lib": "^1.17.1",
     "react": "^18",
     "react-dom": "^18",
-    "pdfjs-dist": "^4.4.168",
-    "@napi-rs/canvas": "^0.1.44"
+    "pdfjs-dist": "^4.4.168"
   },
   "devDependencies": {
     "@types/node": "^20",
