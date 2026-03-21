@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { execSync } from 'child_process'
 import { writeFileSync, unlinkSync, existsSync } from 'fs'
-import { tmpdir } from 'os'
+import { tmpdir, platform } from 'os'
 import { join } from 'path'
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-import { createCanvas } from 'canvas'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+function getPythonCmd(): string {
+  if (process.env.PYTHON_CMD) return process.env.PYTHON_CMD
+  if (platform() === 'win32') return 'python'
+  return 'python3'
+}
+const PYTHON_CMD = getPythonCmd()
 
 const SAFE_TOKEN_LIMIT    = 47_000
 const CALL1_OVERHEAD      = 2_500
@@ -46,24 +52,35 @@ interface TokenBudget {
   skippedPages: Array<{ page: number; doc_type: string; reason: string }>
 }
 
-// ─── Node.js PDF helpers (pdfjs-dist + canvas) ───────────────────────────────
+// ─── Python subprocess helpers ────────────────────────────────────────────────
 
-// Disable the worker — we run server-side
-pdfjs.GlobalWorkerOptions.workerSrc = ''
-
-async function loadPdf(pdfPath: string) {
-  const data = new Uint8Array(require('fs').readFileSync(pdfPath))
-  return pdfjs.getDocument({ data, disableFontFace: true, verbosity: 0 }).promise
+function py(script: string): string {
+  const tmpPath = join(tmpdir(), `owl_${Date.now()}_${Math.random().toString(36).slice(2)}.py`)
+  writeFileSync(tmpPath, script)
+  try {
+    return execSync(`${PYTHON_CMD} "${tmpPath}"`, {
+      maxBuffer: 200 * 1024 * 1024,
+      timeout: 300_000,
+    }).toString()
+  } finally {
+    try { unlinkSync(tmpPath) } catch {}
+  }
 }
 
-async function getPageCount(pdfPath: string): Promise<number> {
-  const doc = await loadPdf(pdfPath)
-  const count = doc.numPages
-  doc.destroy()
-  return count
+// ─── STEP 1: Get page count ───────────────────────────────────────────────────
+
+function getPageCount(pdfPath: string): number {
+  const out = py(`
+import pdfplumber, json
+with pdfplumber.open(${JSON.stringify(pdfPath)}) as pdf:
+    print(json.dumps(len(pdf.pages)))
+`)
+  return JSON.parse(out.trim())
 }
 
-async function generateThumbnails(pdfPath: string, pageCount: number): Promise<string[]> {
+// ─── STEP 2: Generate thumbnails ─────────────────────────────────────────────
+
+function generateThumbnails(pdfPath: string, pageCount: number): string[] {
   const tokensPerPage = Math.max(85, Math.min(
     Math.floor((SAFE_TOKEN_LIMIT - CALL1_OVERHEAD) / pageCount),
     2375
@@ -71,75 +88,72 @@ async function generateThumbnails(pdfPath: string, pageCount: number): Promise<s
   const pixelArea = tokensPerPage * 750
   const width     = Math.floor(Math.sqrt(pixelArea / 1.414))
   const height    = Math.floor(width * 1.414)
+  const dpi       = Math.max(15, Math.round(width / 8.27))
 
-  const doc = await loadPdf(pdfPath)
-  const results: string[] = []
+  const out = py(`
+import pdfplumber, json, base64, io
+from PIL import Image
 
-  for (let i = 1; i <= doc.numPages; i++) {
-    try {
-      const page    = await doc.getPage(i)
-      const vp      = page.getViewport({ scale: 1 })
-      const scale   = Math.min(width / vp.width, height / vp.height)
-      const viewport = page.getViewport({ scale })
-      const canvas  = createCanvas(Math.floor(viewport.width), Math.floor(viewport.height))
-      const ctx     = canvas.getContext('2d') as any
-      await page.render({ canvasContext: ctx, viewport }).promise
-      results.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1])
-      page.cleanup()
-    } catch {
-      results.push('')
-    }
-  }
-
-  doc.destroy()
-  return results
+results = []
+with pdfplumber.open(${JSON.stringify(pdfPath)}) as pdf:
+    for page in pdf.pages:
+        try:
+            img = page.to_image(resolution=${dpi})
+            pil = img.original.copy()
+            pil.thumbnail((${width}, ${height}), Image.LANCZOS)
+            buf = io.BytesIO()
+            pil.save(buf, format='JPEG', quality=85)
+            results.append(base64.b64encode(buf.getvalue()).decode())
+        except:
+            results.append('')
+print(json.dumps(results))
+`)
+  return JSON.parse(out.trim())
 }
 
-async function extractAllText(pdfPath: string): Promise<Record<number, string>> {
-  const doc    = await loadPdf(pdfPath)
+// ─── STEP 3: Extract all page text ───────────────────────────────────────────
+
+function extractAllText(pdfPath: string): Record<number, string> {
+  const out = py(`
+import pdfplumber, json
+result = {}
+with pdfplumber.open(${JSON.stringify(pdfPath)}) as pdf:
+    for i, page in enumerate(pdf.pages):
+        try:
+            t = page.extract_text() or ''
+            result[i+1] = ' '.join(t.split())
+        except:
+            result[i+1] = ''
+print(json.dumps(result))
+`)
+  const raw: Record<string, string> = JSON.parse(out.trim())
   const result: Record<number, string> = {}
-
-  for (let i = 1; i <= doc.numPages; i++) {
-    try {
-      const page    = await doc.getPage(i)
-      const content = await page.getTextContent()
-      const text    = content.items
-        .map((item: any) => ('str' in item ? item.str : ''))
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-      result[i] = text
-      page.cleanup()
-    } catch {
-      result[i] = ''
-    }
-  }
-
-  doc.destroy()
+  for (const [k, v] of Object.entries(raw)) result[+k] = v
   return result
 }
 
-async function renderFullResPages(pdfPath: string, pages: number[]): Promise<Record<number, string>> {
+// ─── STEP 4: Render full-res pages ───────────────────────────────────────────
+
+function renderFullResPages(pdfPath: string, pages: number[]): Record<number, string> {
   if (pages.length === 0) return {}
-
-  const doc    = await loadPdf(pdfPath)
+  const out = py(`
+import pdfplumber, json, base64, io
+pages = ${JSON.stringify(pages)}
+result = {}
+with pdfplumber.open(${JSON.stringify(pdfPath)}) as pdf:
+    for n in pages:
+        try:
+            img = pdf.pages[n-1].to_image(resolution=150)
+            buf = io.BytesIO()
+            img.original.save(buf, format='JPEG', quality=90)
+            result[str(n)] = base64.b64encode(buf.getvalue()).decode()
+        except:
+            result[str(n)] = ''
+print(json.dumps(result))
+`)
+  const raw: Record<string, string> = JSON.parse(out.trim())
   const result: Record<number, string> = {}
-
-  for (const n of pages) {
-    try {
-      const page     = await doc.getPage(n)
-      const viewport = page.getViewport({ scale: 2.0 }) // ~150dpi equivalent
-      const canvas   = createCanvas(Math.floor(viewport.width), Math.floor(viewport.height))
-      const ctx      = canvas.getContext('2d') as any
-      await page.render({ canvasContext: ctx, viewport }).promise
-      result[n] = canvas.toDataURL('image/jpeg', 0.90).split(',')[1]
-      page.cleanup()
-    } catch {
-      result[n] = ''
-    }
-  }
-
-  doc.destroy()
+  for (const [k, v] of Object.entries(raw)) result[+k] = v
   return result
 }
 
@@ -673,12 +687,12 @@ export async function POST(request: NextRequest) {
     tmpPdf = join(tmpdir(), `owl_${Date.now()}.pdf`)
     writeFileSync(tmpPdf, buf)
 
-    const totalPages = await getPageCount(tmpPdf)
+    const totalPages = getPageCount(tmpPdf)
     console.log(`[PropertyOwl] ${totalPages} pages — model: ${model}`)
 
     // ══ CALL 1 ════════════════════════════════════════════════════════
     console.log('[PropertyOwl] Call 1 — generating thumbnails...')
-    const thumbnails = await generateThumbnails(tmpPdf, totalPages)
+    const thumbnails = generateThumbnails(tmpPdf, totalPages)
 
     console.log('[PropertyOwl] Call 1 — mapping document...')
     const pageIndex = await call1_mapDocument(thumbnails, totalPages, model)
@@ -686,13 +700,13 @@ export async function POST(request: NextRequest) {
 
     // ══ CALL 2 PREP ═══════════════════════════════════════════════════
     console.log('[PropertyOwl] Extracting text...')
-    const extractedText = await extractAllText(tmpPdf)
+    const extractedText = extractAllText(tmpPdf)
 
     const budget = buildTokenBudget(pageIndex, extractedText)
     console.log(`[PropertyOwl] Budget — text:${budget.textPages.length}p image:${budget.imagePages.length}p skip:${budget.skippedPages.length}p`)
 
     console.log('[PropertyOwl] Rendering full-res image pages...')
-    const fullResImages = await renderFullResPages(tmpPdf, budget.imagePages.map(p => p.page))
+    const fullResImages = renderFullResPages(tmpPdf, budget.imagePages.map(p => p.page))
 
     const estTokens  = estimateCall2Tokens(budget, extractedText)
     const needsSplit = estTokens > SAFE_TOKEN_LIMIT
