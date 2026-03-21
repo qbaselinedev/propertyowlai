@@ -67,7 +67,6 @@ async function loadPdf(pdfPath: string) {
     data,
     disableFontFace: true,
     verbosity: 0,
-    canvasFactory: new NodeCanvasFactory() as any,
   }).promise
 }
 
