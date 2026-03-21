@@ -5,6 +5,7 @@ import { writeFileSync, unlinkSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
+import * as pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ interface TokenBudget {
 
 // ─── Node.js PDF helpers (pdfjs-dist pure-JS, no native canvas) ──────────────
 
-pdfjs.GlobalWorkerOptions.workerSrc = ''
+pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
 // Minimal no-op canvas factory so pdfjs doesn't crash without a real canvas
 // We only use it for text extraction; image rendering falls back gracefully
