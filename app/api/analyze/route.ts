@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { writeFileSync, unlinkSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
@@ -52,7 +53,7 @@ interface TokenBudget {
 // Use fake worker for Node.js server-side — no DOM/window available
 // Set worker path using file URL — required for pdfjs in Node.js
 const _workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
-pdfjs.GlobalWorkerOptions.workerSrc = `file://${_workerPath}`
+pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(_workerPath).toString()
 
 // Minimal no-op canvas factory so pdfjs doesn't crash without a real canvas
 // We only use it for text extraction; image rendering falls back gracefully
