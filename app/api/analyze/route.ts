@@ -4,11 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { writeFileSync, unlinkSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { pathToFileURL } from 'url'
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-import { createRequire } from 'module'
-const require = createRequire(import.meta.url)
-
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -48,76 +43,53 @@ interface TokenBudget {
   skippedPages: Array<{ page: number; doc_type: string; reason: string }>
 }
 
-// ─── Node.js PDF helpers (pdfjs-dist pure-JS, no native canvas) ──────────────
+// ─── Node.js PDF helpers (pdf-parse — zero native deps, Vercel compatible) ────
 
-// Use fake worker for Node.js server-side — no DOM/window available
-// Set worker path using file URL — required for pdfjs in Node.js
-const _workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
-pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(_workerPath).toString()
-
-// Minimal no-op canvas factory so pdfjs doesn't crash without a real canvas
-// We only use it for text extraction; image rendering falls back gracefully
-class NodeCanvasFactory {
-  create(width: number, height: number) {
-    // Return a stub — we don't actually render to canvas for text extraction
-    return { canvas: null, context: null }
-  }
-  reset(canvasAndContext: any, width: number, height: number) {}
-  destroy(canvasAndContext: any) {}
-}
-
-async function loadPdf(pdfPath: string) {
-  const { readFileSync } = await import('fs')
-  const data = new Uint8Array(readFileSync(pdfPath))
-  return pdfjs.getDocument({
-    data,
-    disableFontFace: true,
-    verbosity: 0,
-  }).promise
-}
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse = require('pdf-parse')
 
 async function getPageCount(pdfPath: string): Promise<number> {
-  const doc   = await loadPdf(pdfPath)
-  const count = doc.numPages
-  doc.destroy()
-  return count
+  const { readFileSync } = await import('fs')
+  const buf  = readFileSync(pdfPath)
+  const data = await pdfParse(buf, { max: 0 }) // max:0 = count pages only
+  return data.numpages
 }
 
-// Thumbnails: since we have no real canvas, return empty strings.
-// Call 1 (document mapping) will skip visual classification and
-// fall back to treating all pages as text — still works well for
-// standard Victorian contracts which are almost entirely text-based.
+// Thumbnails — no canvas available on Vercel, return empty strings.
+// Call 1 will classify all pages as text (works for standard VIC contracts).
 async function generateThumbnails(pdfPath: string, pageCount: number): Promise<string[]> {
   return Array(pageCount).fill('')
 }
 
 async function extractAllText(pdfPath: string): Promise<Record<number, string>> {
-  const doc    = await loadPdf(pdfPath)
+  const { readFileSync } = await import('fs')
+  const buf    = readFileSync(pdfPath)
   const result: Record<number, string> = {}
 
-  for (let i = 1; i <= doc.numPages; i++) {
-    try {
-      const page    = await doc.getPage(i)
-      const content = await page.getTextContent()
-      const text    = content.items
-        .map((item: any) => ('str' in item ? item.str : ''))
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-      result[i] = text
-      page.cleanup()
-    } catch {
-      result[i] = ''
-    }
-  }
+  // pdf-parse renders each page via a custom page render callback
+  let currentPage = 0
+  const pageTexts: string[] = []
 
-  doc.destroy()
+  await pdfParse(buf, {
+    pagerender: (pageData: any) => {
+      return pageData.getTextContent().then((textContent: any) => {
+        const text = textContent.items
+          .map((item: any) => item.str || '')
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+        pageTexts.push(text)
+        return text
+      })
+    }
+  })
+
+  pageTexts.forEach((text, i) => { result[i + 1] = text })
   return result
 }
 
-// Full-res images: no canvas available, return empty — pages will be
-// sent as text instead. Plans of subdivision won't render visually
-// but all text content is still extracted and analysed.
+// Full-res images — not available without canvas, return empty.
+// Pages will be sent as extracted text instead.
 async function renderFullResPages(pdfPath: string, pages: number[]): Promise<Record<number, string>> {
   return {}
 }
