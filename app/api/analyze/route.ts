@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
-import { writeFileSync, unlinkSync, existsSync } from 'fs'
+import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { getDocumentProxy, extractText } from 'unpdf'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -43,62 +44,36 @@ interface TokenBudget {
   skippedPages: Array<{ page: number; doc_type: string; reason: string }>
 }
 
-// ─── Node.js PDF helpers (pdf-parse — zero native deps, Vercel compatible) ────
+// ─── Node.js PDF helpers (unpdf — serverless/Vercel compatible) ──────────────
 
-// pdf-parse loaded via dynamic import for ESM compatibility
-let pdfParse: any
-async function getPdfParse() {
-  if (!pdfParse) {
-    const mod = await import('pdf-parse')
-    pdfParse = mod.default || mod
-  }
-  return pdfParse
+async function loadPdf(pdfPath: string) {
+  const buf = new Uint8Array(readFileSync(pdfPath))
+  return getDocumentProxy(buf)
 }
 
 async function getPageCount(pdfPath: string): Promise<number> {
-  const { readFileSync } = await import('fs')
-  const parse = await getPdfParse()
-  const buf  = readFileSync(pdfPath)
-  const data = await parse(buf, { max: 0 })
-  return data.numpages
+  const pdf = await loadPdf(pdfPath)
+  return pdf.numPages
 }
 
-// Thumbnails — no canvas available on Vercel, return empty strings.
-// Call 1 will classify all pages as text (works for standard VIC contracts).
+// Thumbnails — no canvas on Vercel, return empty strings.
+// Call 1 will treat all pages as text (works well for standard VIC contracts).
 async function generateThumbnails(pdfPath: string, pageCount: number): Promise<string[]> {
   return Array(pageCount).fill('')
 }
 
 async function extractAllText(pdfPath: string): Promise<Record<number, string>> {
-  const { readFileSync } = await import('fs')
-  const buf    = readFileSync(pdfPath)
+  const pdf    = await loadPdf(pdfPath)
+  const { text } = await extractText(pdf, { mergePages: false })
   const result: Record<number, string> = {}
-
-  // pdf-parse renders each page via a custom page render callback
-  let currentPage = 0
-  const pageTexts: string[] = []
-
-  const parse = await getPdfParse()
-  await parse(buf, {
-    pagerender: (pageData: any) => {
-      return pageData.getTextContent().then((textContent: any) => {
-        const text = textContent.items
-          .map((item: any) => item.str || '')
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .trim()
-        pageTexts.push(text)
-        return text
-      })
-    }
+  const pages  = Array.isArray(text) ? text : [text]
+  pages.forEach((t, i) => {
+    result[i + 1] = (t || '').replace(/\s+/g, ' ').trim()
   })
-
-  pageTexts.forEach((text, i) => { result[i + 1] = text })
   return result
 }
 
 // Full-res images — not available without canvas, return empty.
-// Pages will be sent as extracted text instead.
 async function renderFullResPages(pdfPath: string, pages: number[]): Promise<Record<number, string>> {
   return {}
 }
