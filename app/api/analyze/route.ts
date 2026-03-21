@@ -45,13 +45,21 @@ interface TokenBudget {
 
 // ─── Node.js PDF helpers (pdf-parse — zero native deps, Vercel compatible) ────
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require('pdf-parse')
+// pdf-parse loaded via dynamic import for ESM compatibility
+let pdfParse: any
+async function getPdfParse() {
+  if (!pdfParse) {
+    const mod = await import('pdf-parse')
+    pdfParse = mod.default || mod
+  }
+  return pdfParse
+}
 
 async function getPageCount(pdfPath: string): Promise<number> {
   const { readFileSync } = await import('fs')
+  const parse = await getPdfParse()
   const buf  = readFileSync(pdfPath)
-  const data = await pdfParse(buf, { max: 0 }) // max:0 = count pages only
+  const data = await parse(buf, { max: 0 })
   return data.numpages
 }
 
@@ -70,7 +78,8 @@ async function extractAllText(pdfPath: string): Promise<Record<number, string>> 
   let currentPage = 0
   const pageTexts: string[] = []
 
-  await pdfParse(buf, {
+  const parse = await getPdfParse()
+  await parse(buf, {
     pagerender: (pageData: any) => {
       return pageData.getTextContent().then((textContent: any) => {
         const text = textContent.items
