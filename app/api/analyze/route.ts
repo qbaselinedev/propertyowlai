@@ -4,7 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { writeFileSync, unlinkSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import * as pdfjs from 'pdfjs-dist'
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { createRequire } from 'module'
+const require = createRequire(import.meta.url)
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -48,8 +50,9 @@ interface TokenBudget {
 // ─── Node.js PDF helpers (pdfjs-dist pure-JS, no native canvas) ──────────────
 
 // Use fake worker for Node.js server-side — no DOM/window available
-// Disable worker for server-side Node.js execution
-pdfjs.GlobalWorkerOptions.workerSrc = ''
+// Set worker path using file URL — required for pdfjs in Node.js
+const _workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
+pdfjs.GlobalWorkerOptions.workerSrc = `file://${_workerPath}`
 
 // Minimal no-op canvas factory so pdfjs doesn't crash without a real canvas
 // We only use it for text extraction; image rendering falls back gracefully
@@ -65,13 +68,9 @@ class NodeCanvasFactory {
 async function loadPdf(pdfPath: string) {
   const { readFileSync } = await import('fs')
   const data = new Uint8Array(readFileSync(pdfPath))
-  return (pdfjs as any).getDocument({
+  return pdfjs.getDocument({
     data,
-    useSystemFonts: true,
     disableFontFace: true,
-    isEvalSupported: false,
-    useWorkerFetch: false,
-    isOffscreenCanvasSupported: false,
     verbosity: 0,
   }).promise
 }
