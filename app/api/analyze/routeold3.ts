@@ -42,14 +42,12 @@ interface TokenBudget {
 }
 
 // ─── PDF Service client (calls Railway Python microservice) ──────────────────
-// Two calls total: Call A gets text+thumbnails, Call B gets full-res images
-// for only the specific pages Claude needs to see visually.
 
 const PDF_SERVICE_URL    = process.env.PDF_SERVICE_URL || ''
 const PDF_SERVICE_SECRET = process.env.PDF_SERVICE_SECRET || ''
 
 async function callPdfService(fileData: Blob, mode: string, pages: number[] = []): Promise<any> {
-  if (!PDF_SERVICE_URL) throw new Error('PDF_SERVICE_URL not set — add it to Vercel env vars')
+  if (!PDF_SERVICE_URL) throw new Error('PDF_SERVICE_URL environment variable not set')
 
   const form = new FormData()
   form.append('file', fileData, 'document.pdf')
@@ -57,32 +55,35 @@ async function callPdfService(fileData: Blob, mode: string, pages: number[] = []
   if (pages.length > 0) form.append('pages', pages.join(','))
 
   const res = await fetch(`${PDF_SERVICE_URL}/process`, {
-    method:  'POST',
+    method: 'POST',
     headers: { 'X-PDF-Secret': PDF_SERVICE_SECRET },
-    body:    form,
+    body: form,
   })
 
-  if (!res.ok) throw new Error(`PDF service error ${res.status}: ${await res.text()}`)
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`PDF service error: ${err}`)
+  }
   return res.json()
 }
 
-// Call A — send PDF once, get page count + all text + all thumbnails
-async function getPdfData(fileData: Blob): Promise<{
-  totalPages:    number
-  extractedText: Record<number, string>
-  thumbnails:    string[]
-}> {
-  const result = await callPdfService(fileData, 'thumbnails')
-  const text: Record<number, string> = {}
-  for (const [k, v] of Object.entries(result.text || {})) text[+k] = v as string
-  return {
-    totalPages:    result.page_count,
-    extractedText: text,
-    thumbnails:    result.thumbnails || [],
-  }
+async function getPageCount(fileData: Blob): Promise<number> {
+  const result = await callPdfService(fileData, 'count')
+  return result.page_count
 }
 
-// Call B — send PDF again, get full-res images for specific pages only
+async function generateThumbnails(fileData: Blob, pageCount: number): Promise<string[]> {
+  const result = await callPdfService(fileData, 'thumbnails')
+  return result.thumbnails || Array(pageCount).fill('')
+}
+
+async function extractAllText(fileData: Blob): Promise<Record<number, string>> {
+  const result = await callPdfService(fileData, 'text')
+  const out: Record<number, string> = {}
+  for (const [k, v] of Object.entries(result.text || {})) out[+k] = v as string
+  return out
+}
+
 async function renderFullResPages(fileData: Blob, pages: number[]): Promise<Record<number, string>> {
   if (pages.length === 0) return {}
   const result = await callPdfService(fileData, 'full', pages)
@@ -615,21 +616,25 @@ export async function POST(request: NextRequest) {
     if (dlError || !pdfBlob)
       return NextResponse.json({ error: 'Could not download file: ' + dlError?.message }, { status: 500 })
 
-    // ══ RAILWAY CALL A — send PDF once, get page count + text + thumbnails ══
-    console.log('[PropertyOwl] Railway Call A — extracting text + thumbnails...')
-    const { totalPages, extractedText, thumbnails } = await getPdfData(pdfBlob)
+    const totalPages = await getPageCount(pdfBlob)
     console.log(`[PropertyOwl] ${totalPages} pages — model: ${model}`)
 
-    // ══ CLAUDE CALL 1 — map document using thumbnails ══════════════════
-    console.log('[PropertyOwl] Claude Call 1 — mapping document...')
+    // ══ CALL 1 ════════════════════════════════════════════════════════
+    console.log('[PropertyOwl] Call 1 — generating thumbnails...')
+    const thumbnails = await generateThumbnails(pdfBlob, totalPages)
+
+    console.log('[PropertyOwl] Call 1 — mapping document...')
     const pageIndex = await call1_mapDocument(thumbnails, totalPages, model)
-    console.log(`[PropertyOwl] Claude Call 1 done — ${pageIndex.filter(p => p.send_as === 'full_image').length} image pages, ${pageIndex.filter(p => p.send_as === 'text').length} text pages`)
+    console.log(`[PropertyOwl] Call 1 done — ${pageIndex.filter(p => p.send_as === 'full_image').length} image pages, ${pageIndex.filter(p => p.send_as === 'text').length} text pages`)
+
+    // ══ CALL 2 PREP ═══════════════════════════════════════════════════
+    console.log('[PropertyOwl] Extracting text...')
+    const extractedText = await extractAllText(pdfBlob)
 
     const budget = buildTokenBudget(pageIndex, extractedText)
     console.log(`[PropertyOwl] Budget — text:${budget.textPages.length}p image:${budget.imagePages.length}p skip:${budget.skippedPages.length}p`)
 
-    // ══ RAILWAY CALL B — full-res images for specific pages only ═══════
-    console.log('[PropertyOwl] Railway Call B — rendering full-res image pages...')
+    console.log('[PropertyOwl] Rendering full-res image pages...')
     const fullResImages = await renderFullResPages(pdfBlob, budget.imagePages.map(p => p.page))
 
     const estTokens  = estimateCall2Tokens(budget, extractedText)
