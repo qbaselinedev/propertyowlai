@@ -1,6 +1,4 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
-  serverExternalPackages: ['unpdf'],
-}
+const nextConfig = {}
 
 module.exports = nextConfig

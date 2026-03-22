@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
-import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { getDocumentProxy, extractText } from 'unpdf'
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -44,38 +41,55 @@ interface TokenBudget {
   skippedPages: Array<{ page: number; doc_type: string; reason: string }>
 }
 
-// ─── Node.js PDF helpers (unpdf — serverless/Vercel compatible) ──────────────
+// ─── PDF Service client (calls Railway Python microservice) ──────────────────
 
-async function loadPdf(pdfPath: string) {
-  const buf = new Uint8Array(readFileSync(pdfPath))
-  return getDocumentProxy(buf)
-}
+const PDF_SERVICE_URL    = process.env.PDF_SERVICE_URL || ''
+const PDF_SERVICE_SECRET = process.env.PDF_SERVICE_SECRET || ''
 
-async function getPageCount(pdfPath: string): Promise<number> {
-  const pdf = await loadPdf(pdfPath)
-  return pdf.numPages
-}
+async function callPdfService(fileData: Blob, mode: string, pages: number[] = []): Promise<any> {
+  if (!PDF_SERVICE_URL) throw new Error('PDF_SERVICE_URL environment variable not set')
 
-// Thumbnails — no canvas on Vercel, return empty strings.
-// Call 1 will treat all pages as text (works well for standard VIC contracts).
-async function generateThumbnails(pdfPath: string, pageCount: number): Promise<string[]> {
-  return Array(pageCount).fill('')
-}
+  const form = new FormData()
+  form.append('file', fileData, 'document.pdf')
+  form.append('mode', mode)
+  if (pages.length > 0) form.append('pages', pages.join(','))
 
-async function extractAllText(pdfPath: string): Promise<Record<number, string>> {
-  const pdf    = await loadPdf(pdfPath)
-  const { text } = await extractText(pdf, { mergePages: false })
-  const result: Record<number, string> = {}
-  const pages  = Array.isArray(text) ? text : [text]
-  pages.forEach((t, i) => {
-    result[i + 1] = (t || '').replace(/\s+/g, ' ').trim()
+  const res = await fetch(`${PDF_SERVICE_URL}/process`, {
+    method: 'POST',
+    headers: { 'X-PDF-Secret': PDF_SERVICE_SECRET },
+    body: form,
   })
-  return result
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`PDF service error: ${err}`)
+  }
+  return res.json()
 }
 
-// Full-res images — not available without canvas, return empty.
-async function renderFullResPages(pdfPath: string, pages: number[]): Promise<Record<number, string>> {
-  return {}
+async function getPageCount(fileData: Blob): Promise<number> {
+  const result = await callPdfService(fileData, 'count')
+  return result.page_count
+}
+
+async function generateThumbnails(fileData: Blob, pageCount: number): Promise<string[]> {
+  const result = await callPdfService(fileData, 'thumbnails')
+  return result.thumbnails || Array(pageCount).fill('')
+}
+
+async function extractAllText(fileData: Blob): Promise<Record<number, string>> {
+  const result = await callPdfService(fileData, 'text')
+  const out: Record<number, string> = {}
+  for (const [k, v] of Object.entries(result.text || {})) out[+k] = v as string
+  return out
+}
+
+async function renderFullResPages(fileData: Blob, pages: number[]): Promise<Record<number, string>> {
+  if (pages.length === 0) return {}
+  const result = await callPdfService(fileData, 'full', pages)
+  const out: Record<number, string> = {}
+  for (const [k, v] of Object.entries(result.full_res || {})) out[+k] = v as string
+  return out
 }
 
 // ─── CALL 1: Document Mapping ─────────────────────────────────────────────────
@@ -569,8 +583,6 @@ const computeRiskScore = (flags: any[]): number => {
 // ─── Main Handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  let tmpPdf: string | null = null
-
   try {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -597,23 +609,19 @@ export async function POST(request: NextRequest) {
     const model     = config.model      || 'claude-haiku-4-5-20251001'
     const maxTokens = config.max_tokens || 8000
 
-    // Download the already-uploaded PDF from storage
-    const { data: fileData, error: dlError } = await supabase.storage
+    // Download PDF from storage
+    const { data: pdfBlob, error: dlError } = await supabase.storage
       .from('property-documents')
       .download(filePath)
-    if (dlError || !fileData)
+    if (dlError || !pdfBlob)
       return NextResponse.json({ error: 'Could not download file: ' + dlError?.message }, { status: 500 })
 
-    const buf = Buffer.from(await fileData.arrayBuffer())
-    tmpPdf = join(tmpdir(), `owl_${Date.now()}.pdf`)
-    writeFileSync(tmpPdf, buf)
-
-    const totalPages = await getPageCount(tmpPdf)
+    const totalPages = await getPageCount(pdfBlob)
     console.log(`[PropertyOwl] ${totalPages} pages — model: ${model}`)
 
     // ══ CALL 1 ════════════════════════════════════════════════════════
     console.log('[PropertyOwl] Call 1 — generating thumbnails...')
-    const thumbnails = await generateThumbnails(tmpPdf, totalPages)
+    const thumbnails = await generateThumbnails(pdfBlob, totalPages)
 
     console.log('[PropertyOwl] Call 1 — mapping document...')
     const pageIndex = await call1_mapDocument(thumbnails, totalPages, model)
@@ -621,13 +629,13 @@ export async function POST(request: NextRequest) {
 
     // ══ CALL 2 PREP ═══════════════════════════════════════════════════
     console.log('[PropertyOwl] Extracting text...')
-    const extractedText = await extractAllText(tmpPdf)
+    const extractedText = await extractAllText(pdfBlob)
 
     const budget = buildTokenBudget(pageIndex, extractedText)
     console.log(`[PropertyOwl] Budget — text:${budget.textPages.length}p image:${budget.imagePages.length}p skip:${budget.skippedPages.length}p`)
 
     console.log('[PropertyOwl] Rendering full-res image pages...')
-    const fullResImages = await renderFullResPages(tmpPdf, budget.imagePages.map(p => p.page))
+    const fullResImages = await renderFullResPages(pdfBlob, budget.imagePages.map(p => p.page))
 
     const estTokens  = estimateCall2Tokens(budget, extractedText)
     const needsSplit = estTokens > SAFE_TOKEN_LIMIT
@@ -706,6 +714,6 @@ export async function POST(request: NextRequest) {
     console.error('[PropertyOwl] Error:', err)
     return NextResponse.json({ error: err.message || 'Analysis failed' }, { status: 500 })
   } finally {
-    if (tmpPdf && existsSync(tmpPdf)) try { unlinkSync(tmpPdf) } catch {}
+    // No temp files to clean up — PDF processed by external service
   }
 }
