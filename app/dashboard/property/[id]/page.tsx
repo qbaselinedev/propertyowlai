@@ -102,6 +102,8 @@ export default function PropertyDetailPage() {
   const [activeTab, setActiveTab] = useState('Contract Scan')
   const [contractSubTab, setContractSubTab] = useState('Overview')
   const [uploading, setUploading] = useState<string | null>(null)
+  const [jobId, setJobId]         = useState<string | null>(null)
+  const [jobStage, setJobStage]   = useState<string>('')
   const [downloading, setDownloading] = useState(false)
   const [downloadingScan, setDownloadingScan] = useState(false)
   const [credits, setCredits] = useState(0)
@@ -236,38 +238,65 @@ export default function PropertyDetailPage() {
   }
 
   async function handleUpload(file: File) {
-  if (!property) return
-  setUploading('uploading')
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Not logged in')
+    if (!property) return
+    setUploading('uploading')
+    setJobStage('Preparing your document…')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not logged in')
 
-    const path = `${user.id}/${property.id}/${Date.now()}_${file.name}`
-    const { error: upErr } = await supabase.storage
-      .from('property-documents')
-      .upload(path, file)
-    if (upErr) throw upErr
+      // Step 1 — upload to storage
+      const path = `${user.id}/${property.id}/${Date.now()}_${file.name}`
+      const { error: upErr } = await supabase.storage
+        .from('property-documents').upload(path, file)
+      if (upErr) throw upErr
 
-    setUploading('analysing')
+      // Step 2 — start the job (returns immediately with jobId)
+      setUploading('starting')
+      setJobStage('Starting analysis engine…')
+      const formData = new FormData()
+      formData.append('filePath', path)
+      formData.append('propertyId', property.id)
+      const startRes  = await fetch('/api/analyze/start', { method: 'POST', body: formData })
+      const startData = await startRes.json()
+      if (!startRes.ok) throw new Error(startData.error ?? 'Failed to start')
 
-    const formData = new FormData()
-    formData.append('filePath', path)
-    formData.append('propertyId', property.id)
+      setJobId(startData.jobId)
+      setUploading('processing')
 
-    const res = await fetch('/api/analyze', {
-      method: 'POST',
-      body: formData,
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error ?? 'Analysis failed')
-    await load()
-  } catch (e: any) {
-    alert('Upload failed: ' + e.message)
-  } finally {
-    setUploading(null)
-    if (fileInput) fileInput.value = ''
+      // Step 3 — poll for status every 3 seconds
+      await new Promise<void>((resolve, reject) => {
+        const interval = setInterval(async () => {
+          try {
+            const res  = await fetch(`/api/analyze/status?jobId=${startData.jobId}`)
+            const data = await res.json()
+            if (data.stageLabel) setJobStage(data.stageLabel)
+            if (data.done) {
+              clearInterval(interval)
+              resolve()
+            } else if (data.failed) {
+              clearInterval(interval)
+              reject(new Error(data.error || 'Analysis failed'))
+            }
+          } catch (e) {
+            // network blip — keep polling
+          }
+        }, 3000)
+      })
+
+      // Step 4 — reload results
+      setJobStage('Loading your results…')
+      await load()
+
+    } catch (e: any) {
+      alert('Upload failed: ' + e.message)
+    } finally {
+      setUploading(null)
+      setJobId(null)
+      setJobStage('')
+      if (fileInput) fileInput.value = ''
+    }
   }
-}
 
   async function handleRunScan() {
     if (!property) return
@@ -485,77 +514,82 @@ export default function PropertyDetailPage() {
           </div>
         )}
 
-        {/* Processing modal overlay */}
+        {/* Processing modal */}
         {uploading && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:'rgba(0,0,0,0.55)', backdropFilter:'blur(4px)'}}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-              {/* Header */}
-              <div className="px-6 pt-6 pb-4 border-b border-gray-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{background:'#E8001D'}}>
-                    <span className="text-white text-base animate-spin inline-block">⟳</span>
-                  </div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:'rgba(10,10,10,0.7)', backdropFilter:'blur(6px)'}}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+
+              {/* Red top bar with owl */}
+              <div className="px-6 py-5" style={{background:'#E8001D'}}>
+                <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-black text-sm text-gray-900">
-                      {uploading === 'uploading' ? 'Uploading your document' : 'AI is reading your documents'}
+                    <p className="text-white font-black text-base leading-tight">
+                      {uploading === 'uploading' ? '📤 Uploading document' :
+                       uploading === 'starting'  ? '⚡ Starting analysis' :
+                       '🦉 PropertyOwl is reading'}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5">Please keep this page open</p>
+                    <p className="text-red-200 text-xs mt-1">Keep this page open</p>
                   </div>
+                  <span className="text-3xl" style={{animation:'spin 2s linear infinite', display:'inline-block'}}>🦉</span>
                 </div>
               </div>
-              {/* Steps */}
-              <div className="px-6 py-5 space-y-4">
-                {[
-                  { key: 'uploading',   icon: '📤', label: 'Uploading document',               sub: 'Sending your PDF to secure storage' },
-                  { key: 'analysing',   icon: '🔍', label: 'Extracting text & page structure',  sub: 'Reading all pages via Python/pdfplumber' },
-                  { key: 'analysing',   icon: '🧠', label: 'AI reviewing S32 & contract',       sub: 'Claude is analysing every clause and figure' },
-                  { key: 'analysing',   icon: '📋', label: 'Building your report',              sub: 'Risk score, flags, negotiation points' },
-                ].map((step, i) => {
-                  const isActive   = uploading === step.key && i <= (uploading === 'uploading' ? 0 : 3)
-                  const isDone     = uploading === 'analysing' && i === 0
-                  const isPending  = uploading === 'uploading' && i > 0
-                  return (
-                    <div key={i} className="flex items-start gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm transition-all
-                        ${isDone    ? 'bg-emerald-100'  : ''}
-                        ${isActive  ? 'bg-red-50'       : ''}
-                        ${isPending ? 'bg-gray-50'      : ''}
-                      `}>
-                        {isDone   ? '✓' : step.icon}
-                      </div>
-                      <div className="pt-1">
-                        <p className={`text-sm font-semibold transition-all
-                          ${isDone    ? 'text-emerald-600' : ''}
-                          ${isActive  ? 'text-gray-900'    : ''}
-                          ${isPending ? 'text-gray-300'    : ''}
-                        `}>{step.label}</p>
-                        <p className={`text-xs mt-0.5 transition-all
-                          ${isDone    ? 'text-emerald-400' : ''}
-                          ${isActive  ? 'text-gray-400'    : ''}
-                          ${isPending ? 'text-gray-200'    : ''}
-                        `}>{step.sub}</p>
-                      </div>
-                      {isActive && (
-                        <div className="ml-auto pt-1.5">
-                          <div className="flex gap-1">
-                            {[0,1,2].map(d => (
-                              <div key={d} className="w-1.5 h-1.5 rounded-full bg-red-400"
-                                style={{animation:`pulse 1.2s ease-in-out ${d*0.2}s infinite`}}/>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-              {/* Footer */}
-              <div className="px-6 pb-5">
-                <div className="bg-gray-50 rounded-xl px-4 py-3">
-                  <p className="text-xs text-gray-500 text-center">
-                    ⏱ This takes <strong>60–90 seconds</strong> for a full 130-page document. Grab a coffee ☕
+
+              {/* Live stage */}
+              <div className="px-6 py-5">
+                <div className="bg-gray-50 rounded-xl px-4 py-3 mb-4 min-h-[52px] flex items-center gap-3">
+                  <span className="text-lg flex-shrink-0" style={{animation:'pulse 1.5s ease-in-out infinite'}}>⚙️</span>
+                  <p className="text-sm text-gray-700 font-medium leading-snug">
+                    {jobStage || 'Initialising…'}
                   </p>
                 </div>
+
+                {/* Progress steps */}
+                <div className="space-y-3">
+                  {[
+                    { stage: 'uploading',   icon: '📤', label: 'Uploading to secure storage' },
+                    { stage: 'extracting',  icon: '📄', label: 'Extracting text from all pages' },
+                    { stage: 'mapping',     icon: '🗺', label: 'Classifying pages & structure' },
+                    { stage: 'analysing',   icon: '🧠', label: 'AI reviewing S32 & contract' },
+                    { stage: 'saving',      icon: '💾', label: 'Saving findings & risk score' },
+                  ].map((step, i) => {
+                    const stageOrder = ['uploading','starting','extracting','mapping','analysing','saving','done']
+                    const currentIdx = stageOrder.indexOf(uploading || '')
+                    const stepIdx    = stageOrder.indexOf(step.stage)
+                    const isDone     = stepIdx < currentIdx
+                    const isActive   = step.stage === uploading || (uploading === 'processing' && step.stage === 'extracting')
+                    return (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 transition-all duration-500
+                          ${isDone   ? 'bg-emerald-500 text-white' : ''}
+                          ${isActive ? 'bg-red-100 text-red-600'   : ''}
+                          ${!isDone && !isActive ? 'bg-gray-100 text-gray-300' : ''}
+                        `}>
+                          {isDone ? '✓' : step.icon}
+                        </div>
+                        <span className={`text-xs font-medium transition-all duration-500
+                          ${isDone   ? 'text-emerald-600' : ''}
+                          ${isActive ? 'text-gray-800'    : ''}
+                          ${!isDone && !isActive ? 'text-gray-300' : ''}
+                        `}>{step.label}</span>
+                        {isActive && (
+                          <div className="ml-auto flex gap-0.5">
+                            {[0,1,2].map(d=>(
+                              <div key={d} className="w-1 h-1 rounded-full bg-red-400"
+                                style={{animation:`bounce 1s ease-in-out ${d*0.15}s infinite`}}/>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 pb-5 pt-0">
+                <p className="text-center text-xs text-gray-400">
+                  ☕ Grab a coffee — typically <strong className="text-gray-600">60–120 seconds</strong> for a full contract
+                </p>
               </div>
             </div>
           </div>
