@@ -251,7 +251,7 @@ export default function PropertyDetailPage() {
     setUploading('analysing')
 
     const formData = new FormData()
-    formData.append('file', file)
+    formData.append('filePath', path)
     formData.append('propertyId', property.id)
 
     const res = await fetch('/api/analyze', {
