@@ -237,7 +237,7 @@ export default function PropertyDetailPage() {
 
   async function handleUpload(file: File) {
   if (!property) return
-  setUploading('uploading')
+  setUploading('Uploading document…')
   try {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not logged in')
@@ -248,10 +248,10 @@ export default function PropertyDetailPage() {
       .upload(path, file)
     if (upErr) throw upErr
 
-    setUploading('analysing')
+    setUploading('AI is reading your documents… this takes 60–90 seconds')
 
     const formData = new FormData()
-    formData.append('file', file)
+    formData.append('filePath', path)
     formData.append('propertyId', property.id)
 
     const res = await fetch('/api/analyze', {
@@ -485,79 +485,11 @@ export default function PropertyDetailPage() {
           </div>
         )}
 
-        {/* Processing modal overlay */}
+        {/* uploading notice */}
         {uploading && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:'rgba(0,0,0,0.55)', backdropFilter:'blur(4px)'}}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-              {/* Header */}
-              <div className="px-6 pt-6 pb-4 border-b border-gray-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{background:'#E8001D'}}>
-                    <span className="text-white text-base animate-spin inline-block">⟳</span>
-                  </div>
-                  <div>
-                    <p className="font-black text-sm text-gray-900">
-                      {uploading === 'uploading' ? 'Uploading your document' : 'AI is reading your documents'}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">Please keep this page open</p>
-                  </div>
-                </div>
-              </div>
-              {/* Steps */}
-              <div className="px-6 py-5 space-y-4">
-                {[
-                  { key: 'uploading',   icon: '📤', label: 'Uploading document',               sub: 'Sending your PDF to secure storage' },
-                  { key: 'analysing',   icon: '🔍', label: 'Extracting text & page structure',  sub: 'Reading all pages via Python/pdfplumber' },
-                  { key: 'analysing',   icon: '🧠', label: 'AI reviewing S32 & contract',       sub: 'Claude is analysing every clause and figure' },
-                  { key: 'analysing',   icon: '📋', label: 'Building your report',              sub: 'Risk score, flags, negotiation points' },
-                ].map((step, i) => {
-                  const isActive   = uploading === step.key && i <= (uploading === 'uploading' ? 0 : 3)
-                  const isDone     = uploading === 'analysing' && i === 0
-                  const isPending  = uploading === 'uploading' && i > 0
-                  return (
-                    <div key={i} className="flex items-start gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm transition-all
-                        ${isDone    ? 'bg-emerald-100'  : ''}
-                        ${isActive  ? 'bg-red-50'       : ''}
-                        ${isPending ? 'bg-gray-50'      : ''}
-                      `}>
-                        {isDone   ? '✓' : step.icon}
-                      </div>
-                      <div className="pt-1">
-                        <p className={`text-sm font-semibold transition-all
-                          ${isDone    ? 'text-emerald-600' : ''}
-                          ${isActive  ? 'text-gray-900'    : ''}
-                          ${isPending ? 'text-gray-300'    : ''}
-                        `}>{step.label}</p>
-                        <p className={`text-xs mt-0.5 transition-all
-                          ${isDone    ? 'text-emerald-400' : ''}
-                          ${isActive  ? 'text-gray-400'    : ''}
-                          ${isPending ? 'text-gray-200'    : ''}
-                        `}>{step.sub}</p>
-                      </div>
-                      {isActive && (
-                        <div className="ml-auto pt-1.5">
-                          <div className="flex gap-1">
-                            {[0,1,2].map(d => (
-                              <div key={d} className="w-1.5 h-1.5 rounded-full bg-red-400"
-                                style={{animation:`pulse 1.2s ease-in-out ${d*0.2}s infinite`}}/>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-              {/* Footer */}
-              <div className="px-6 pb-5">
-                <div className="bg-gray-50 rounded-xl px-4 py-3">
-                  <p className="text-xs text-gray-500 text-center">
-                    ⏱ This takes <strong>60–90 seconds</strong> for a full 130-page document. Grab a coffee ☕
-                  </p>
-                </div>
-              </div>
-            </div>
+          <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex items-center gap-3">
+            <span className="text-amber-500 text-base animate-spin inline-block">⟳</span>
+            <div><p className="text-sm font-bold text-amber-800">{uploading}</p><p className="text-xs text-amber-600">Do not close this page.</p></div>
           </div>
         )}
 
