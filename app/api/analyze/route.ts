@@ -131,38 +131,56 @@ async function call1_mapDocument(
   model: string
 ): Promise<PageIndex[]> {
 
-  const imageBlocks: Anthropic.ImageBlockParam[] = thumbnails
-    .map((b64, i) => b64 ? {
-      type: 'image' as const,
-      source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: b64 },
-    } : null)
-    .filter(Boolean) as Anthropic.ImageBlockParam[]
+  const BATCH_SIZE = 80 // stay well under Claude's 100 image limit
+  const allResults: PageIndex[] = []
 
-  const response = await client.messages.create({
-    model,
-    max_tokens: 4096,
-    system: CALL1_SYSTEM,
-    messages: [{
-      role: 'user',
-      content: [
-        ...imageBlocks,
-        {
-          type: 'text',
-          text: `Above are all ${pageCount} page thumbnails of a Victorian property document.\n\nReturn ONLY a valid JSON array (no markdown, no preamble) with exactly ${pageCount} objects:\n[\n  {"page":1,"doc_type":"contract_of_sale","send_as":"text","readable":true,"notes":null}\n]\n\nOne object per page, in order 1 to ${pageCount}.`,
-        },
-      ],
-    }],
-  })
+  // Split thumbnails into batches if > 80 pages
+  for (let batchStart = 0; batchStart < thumbnails.length; batchStart += BATCH_SIZE) {
+    const batchThumbs  = thumbnails.slice(batchStart, batchStart + BATCH_SIZE)
+    const batchPages   = batchThumbs.length
+    const pageOffset   = batchStart + 1  // page numbers in this batch start at this
+    const pageEnd      = batchStart + batchPages
 
-  const raw = response.content[0].type === 'text' ? response.content[0].text : '[]'
-  const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    console.log(`[PropertyOwl] Call 1 batch pages ${pageOffset}–${pageEnd}`)
 
-  try {
-    return JSON.parse(cleaned)
-  } catch {
-    console.warn('[PropertyOwl] Call 1 parse failed — using pdfplumber fallback')
-    return fallbackClassification(pageCount)
+    const imageBlocks: Anthropic.ImageBlockParam[] = batchThumbs
+      .map((b64) => b64 ? {
+        type: 'image' as const,
+        source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: b64 },
+      } : null)
+      .filter(Boolean) as Anthropic.ImageBlockParam[]
+
+    const response = await client.messages.create({
+      model,
+      max_tokens: 4096,
+      system: CALL1_SYSTEM,
+      messages: [{
+        role: 'user',
+        content: [
+          ...imageBlocks,
+          {
+            type: 'text',
+            text: `Above are pages ${pageOffset} to ${pageEnd} (${batchPages} thumbnails) of a ${pageCount}-page Victorian property document.\n\nReturn ONLY a valid JSON array (no markdown, no preamble) with exactly ${batchPages} objects:\n[\n  {"page":${pageOffset},"doc_type":"contract_of_sale","send_as":"text","readable":true,"notes":null}\n]\n\nPage numbers must start at ${pageOffset} and end at ${pageEnd}.`,
+          },
+        ],
+      }],
+    })
+
+    const raw     = response.content[0].type === 'text' ? response.content[0].text : '[]'
+    const cleaned = raw.replace(/\`\`\`json\n?/g, '').replace(/\`\`\`\n?/g, '').trim()
+
+    try {
+      const batch = JSON.parse(cleaned) as PageIndex[]
+      allResults.push(...batch)
+    } catch {
+      console.warn(`[PropertyOwl] Call 1 batch ${pageOffset}-${pageEnd} parse failed — using fallback`)
+      for (let p = pageOffset; p <= pageEnd; p++) {
+        allResults.push({ page: p, doc_type: 'unknown_text', send_as: 'text', readable: true, notes: 'fallback' })
+      }
+    }
   }
+
+  return allResults
 }
 
 function fallbackClassification(pageCount: number): PageIndex[] {
