@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Body -->
+  <ellipse cx="16" cy="22" rx="9" ry="9.5" fill="#3D2208"/>
+  <!-- Belly -->
+  <ellipse cx="16" cy="24" rx="5.5" ry="6.5" fill="#C8841A"/>
+  <!-- Wings -->
+  <ellipse cx="8" cy="23" rx="3.5" ry="6.5" fill="#2A1504" transform="rotate(-10 8 23)"/>
+  <ellipse cx="24" cy="23" rx="3.5" ry="6.5" fill="#2A1504" transform="rotate(10 24 23)"/>
+  <!-- Head -->
+  <ellipse cx="16" cy="12" rx="8" ry="7.5" fill="#3D2208"/>
+  <!-- Ears -->
+  <polygon points="10,6 8,1 13,5" fill="#5A3210"/>
+  <polygon points="22,6 24,1 19,5" fill="#5A3210"/>
+  <!-- Left eye -->
+  <circle cx="12.5" cy="12" r="3.5" fill="#F5E8C0"/>
+  <circle cx="12.5" cy="12" r="2" fill="#1A0D02"/>
+  <circle cx="11.5" cy="11" r="0.7" fill="white" opacity="0.9"/>
+  <!-- Right eye -->
+  <circle cx="19.5" cy="12" r="3.5" fill="#F5E8C0"/>
+  <circle cx="19.5" cy="12" r="2" fill="#1A0D02"/>
+  <circle cx="18.5" cy="11" r="0.7" fill="white" opacity="0.9"/>
+  <!-- Eye rings -->
+  <circle cx="19.5" cy="12" r="4" fill="none" stroke="#B8860B" stroke-width="1"/>
+  <!-- Beak -->
+  <polygon points="16,15 13.5,18 18.5,18" fill="#D4850A"/>
+  <!-- Red accent dot -->
+  <circle cx="26" cy="4" r="3.5" fill="#E8001D"/>
+</svg>

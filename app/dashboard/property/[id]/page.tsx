@@ -424,27 +424,40 @@ export default function PropertyDetailPage() {
         <div className="flex items-center justify-between px-3 pt-0"
              style={{background: activeTab === 'Contract Scan' ? '#FFF8F8' : '#F8FAFC',
                      borderBottom: `2px solid ${activeTab === 'Contract Scan' ? '#FECACA' : '#CBD5E1'}`}}>
-          <div className="flex gap-1 py-2">
+          <div className="flex gap-0 py-2">
             {TABS.map(tab => {
               const isActive = activeTab === tab
               const tabColor = tab === 'Contract Scan' ? '#E8001D' : '#334155'
+              const hasDone  = tab === 'Contract Scan' ? !!(s32 || contract) : !!scan
               return (
                 <button key={tab} onClick={() => setActiveTab(tab)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all whitespace-nowrap rounded-lg"
+                  className="relative flex items-center gap-2 px-5 py-2.5 text-sm font-bold transition-all whitespace-nowrap"
                   style={isActive ? {
                     background: tabColor,
                     color: 'white',
-                    boxShadow: `0 2px 8px ${tabColor}44`
+                    borderRadius: '8px 8px 0 0',
+                    marginBottom: '-2px',
+                    paddingBottom: '12px',
+                    boxShadow: `0 -2px 8px ${tabColor}22`
                   } : {
-                    color: '#9CA3AF',
-                    background: 'transparent'
+                    color: '#6B7280',
+                    background: '#F3F4F6',
+                    borderRadius: '8px 8px 0 0',
+                    border: '1px solid #E5E7EB',
+                    borderBottom: 'none',
+                    marginBottom: '-2px',
                   }}>
-                  <span>{tab === 'Contract Scan' ? '📄' : '🔍'}</span>
+                  <span className="text-base">{tab === 'Contract Scan' ? '📄' : '🔍'}</span>
                   <span>{tab}</span>
-                  {isActive && tab === 'Contract Scan' && (s32 || contract) && <span className="text-[10px] bg-white/30 px-1.5 py-0.5 rounded-full font-bold">✓</span>}
-                  {isActive && tab === 'Online Scan' && scan && <span className="text-[10px] bg-white/30 px-1.5 py-0.5 rounded-full font-bold">✓</span>}
-                  {!isActive && tab === 'Contract Scan' && (s32 || contract) && <span className="text-[10px] text-emerald-500 font-bold">✓</span>}
-                  {!isActive && tab === 'Online Scan' && scan && <span className="text-[10px] text-emerald-500 font-bold">✓</span>}
+                  {hasDone && (
+                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full
+                      ${isActive ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-600'}`}>✓</span>
+                  )}
+                  {!isActive && (
+                    <span className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full bg-gray-300 flex items-center justify-center">
+                      <svg width="6" height="6" viewBox="0 0 6 6"><path d="M1 2.5l2 2 2-2" stroke="#666" strokeWidth="1.2" fill="none" strokeLinecap="round"/></svg>
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -466,10 +479,12 @@ export default function PropertyDetailPage() {
               </button>
             )}
             {activeTab === 'Contract Scan' && (
-              <button onClick={triggerUpload} disabled={!!uploading}
-                className="text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+              <button onClick={triggerUpload}
+                disabled={!!uploading || credits < 2}
+                title={credits < 2 ? `You need 2 credits to analyse. You have ${credits}.` : ''}
+                className="text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{background: '#1A1A1A'}}>
-                {uploading ? '⟳ Processing…' : (s32 || contract) ? '↑ Re-analyse' : '↑ Upload Documents'}
+                {uploading ? '⟳ Processing…' : credits < 2 ? `⚡ Need 2 credits (have ${credits})` : (s32 || contract) ? '↑ Re-analyse' : '↑ Upload Documents'}
               </button>
             )}
             {activeTab === 'Online Scan' && scan && (
@@ -519,26 +534,26 @@ export default function PropertyDetailPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:'rgba(10,10,10,0.7)', backdropFilter:'blur(6px)'}}>
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
 
-              {/* Red top bar with owl */}
-              <div className="px-6 py-5" style={{background:'#E8001D'}}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white font-black text-base leading-tight">
-                      {uploading === 'uploading' ? '📤 Uploading document' :
-                       uploading === 'starting'  ? '⚡ Starting analysis' :
-                       '🦉 PropertyOwl is reading'}
-                    </p>
-                    <p className="text-red-200 text-xs mt-1">Keep this page open</p>
-                  </div>
-                  <span className="text-3xl" style={{animation:'spin 2s linear infinite', display:'inline-block'}}>🦉</span>
-                </div>
+              {/* Header with animated owl */}
+              <div className="px-6 pt-7 pb-5 text-center" style={{background:'linear-gradient(135deg,#E8001D 0%,#C0001A 100%)'}}>
+                <div style={{fontSize:'56px', lineHeight:1, display:'block', animation:'owl-bob 2s ease-in-out infinite', marginBottom:'10px'}}>🦉</div>
+                <p className="text-white font-black text-lg leading-tight tracking-tight">
+                  {uploading === 'uploading' ? 'Uploading your document' :
+                   uploading === 'starting'  ? 'Starting analysis engine' :
+                   'PropertyOwl is on the case'}
+                </p>
+                <p className="text-red-200 text-xs mt-1.5 font-medium">Please keep this page open</p>
               </div>
 
               {/* Live stage */}
               <div className="px-6 py-5">
-                <div className="bg-gray-50 rounded-xl px-4 py-3 mb-4 min-h-[52px] flex items-center gap-3">
-                  <span className="text-lg flex-shrink-0" style={{animation:'pulse 1.5s ease-in-out infinite'}}>⚙️</span>
-                  <p className="text-sm text-gray-700 font-medium leading-snug">
+                <div className="rounded-xl px-4 py-3 mb-4 min-h-[52px] flex items-center gap-3 border" style={{background:'#FFF5F5', borderColor:'#FECACA'}}>
+                  <div className="flex gap-1 flex-shrink-0">
+                    {[0,1,2].map(d=>(
+                      <div key={d} className="w-1.5 h-1.5 rounded-full" style={{background:'#E8001D', animation:`bounce 1s ease-in-out ${d*0.15}s infinite`}}/>
+                    ))}
+                  </div>
+                  <p className="text-sm font-semibold leading-snug" style={{color:'#C0001A'}}>
                     {jobStage || 'Initialising…'}
                   </p>
                 </div>
