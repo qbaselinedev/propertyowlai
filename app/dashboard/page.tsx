@@ -26,12 +26,11 @@ const typeIcon: Record<string, string> = {
   house: '🏠', apartment: '🏢', townhouse: '🏘️', land: '🌿', other: '🏗️',
 }
 
-// Attention level — replaces "risk score"
-function attentionLevel(score: number | null): { label: string; color: string; bg: string; dot: string } {
-  if (!score) return { label: 'Not reviewed', color: 'text-gray-400', bg: 'bg-gray-100', dot: 'bg-gray-300' }
-  if (score >= 8) return { label: 'Needs attention', color: 'text-red-700',   bg: 'bg-red-50',   dot: 'bg-red-400' }
-  if (score >= 5) return { label: 'Review carefully', color: 'text-amber-700', bg: 'bg-amber-50', dot: 'bg-amber-400' }
-  return { label: 'Looking good', color: 'text-emerald-700', bg: 'bg-emerald-50', dot: 'bg-emerald-400' }
+// Neutral item count display — no advisory labels
+function itemsLabel(score: number | null, reviewed: boolean): { label: string; color: string; bg: string; dot: string } {
+  if (!reviewed || score === null) return { label: 'Not yet reviewed', color: 'text-gray-400', bg: 'bg-gray-100', dot: 'bg-gray-300' }
+  if (score === 0) return { label: 'No items detected', color: 'text-emerald-700', bg: 'bg-emerald-50', dot: 'bg-emerald-400' }
+  return { label: `${score} item${score !== 1 ? 's' : ''} detected`, color: 'text-gray-600', bg: 'bg-gray-50', dot: 'bg-gray-400' }
 }
 
 function greeting() {
@@ -42,7 +41,7 @@ function greeting() {
 export default function DashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [properties, setProperties] = useState<Property[]>([])
-  const [totalIssues, setTotalIssues] = useState(0)
+  const [totalItems, setTotalItems] = useState(0)
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
@@ -60,7 +59,6 @@ export default function DashboardPage() {
       const propList = props || []
       setProperties(propList)
 
-      // Count actual issues from reports — sum red_flags arrays
       if (propList.length > 0) {
         const ids = propList.map((p: Property) => p.id)
         const { data: reports } = await supabase
@@ -72,7 +70,7 @@ export default function DashboardPage() {
             const flags = Array.isArray(r.red_flags) ? r.red_flags : []
             return sum + flags.length
           }, 0)
-          setTotalIssues(total)
+          setTotalItems(total)
         }
       }
 
@@ -83,7 +81,7 @@ export default function DashboardPage() {
 
   const reviewed = properties.filter(p => p.s32_reviewed).length
   const firstName = profile?.full_name?.split(' ')[0] || 'there'
-  const needsAttention = properties.filter(p => p.risk_score && p.risk_score >= 8).length
+  const withItems = properties.filter(p => p.s32_reviewed && p.risk_score && p.risk_score > 0).length
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -97,13 +95,11 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8 pb-10">
 
-      {/* ── Hero ──────────────────────────────────────────────────────────── */}
+      {/* ── Hero ── */}
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-gray-500 font-medium">{greeting()}</p>
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mt-0.5">
-            {firstName} 👋
-          </h1>
+          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mt-0.5">{firstName} 👋</h1>
           <p className="text-gray-400 text-sm mt-1">
             {properties.length === 0
               ? 'Add a property to get started'
@@ -116,14 +112,9 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* ── Stats ─────────────────────────────────────────────────────────── */}
+      {/* ── Stats ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard
-          label="Properties"
-          value={properties.length}
-          sub="In your portfolio"
-          icon="🏠"
-        />
+        <StatCard label="Properties" value={properties.length} sub="In your portfolio" icon="🏠" />
         <StatCard
           label="Credits"
           value={profile?.credits ?? 0}
@@ -133,38 +124,37 @@ export default function DashboardPage() {
               : profile.credits > 0
                 ? `${profile.credits} credit${profile.credits !== 1 ? 's' : ''} — top up to continue`
                 : 'No credits — top up to continue'
-            : 'Top up anytime'
-          }
+            : 'Top up anytime'}
           icon="💳"
           action={{ label: 'Buy credits', href: '/dashboard/buy-credits' }}
           highlight={profile?.credits !== undefined && profile.credits < 5}
         />
         <StatCard
-          label="Reviews run"
+          label="Documents reviewed"
           value={reviewed}
-          sub={reviewed === 0 ? 'Upload a doc to start' : `${reviewed} document${reviewed !== 1 ? 's' : ''} analysed`}
+          sub={reviewed === 0 ? 'Upload a doc to start' : `${reviewed} document${reviewed !== 1 ? 's' : ''} processed`}
           icon="📄"
         />
         <StatCard
-          label="Items to review"
-          value={totalIssues}
-          sub={totalIssues === 0 ? 'Across all properties' : `Across ${reviewed} review${reviewed !== 1 ? 's' : ''}`}
+          label="Items detected"
+          value={totalItems}
+          sub={totalItems === 0 ? 'Upload docs to extract items' : `Across ${reviewed} document${reviewed !== 1 ? 's' : ''}`}
           icon="🔍"
-          flagged={totalIssues > 0}
+          flagged={totalItems > 0}
         />
       </div>
 
-      {/* ── Attention banner — only if any property needs it ──────────────── */}
-      {needsAttention > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 flex items-center gap-3">
-          <span className="text-base flex-shrink-0">⚠️</span>
-          <p className="text-sm text-amber-800">
-            <strong>{needsAttention} propert{needsAttention > 1 ? 'ies' : 'y'}</strong> in your portfolio {needsAttention > 1 ? 'have' : 'has'} items that need your attention before signing.
+      {/* ── Info banner ── */}
+      {withItems > 0 && (
+        <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 flex items-center gap-3">
+          <span className="text-base flex-shrink-0">📋</span>
+          <p className="text-sm text-blue-800">
+            <strong>{withItems} propert{withItems > 1 ? 'ies' : 'y'}</strong> in your portfolio {withItems > 1 ? 'have' : 'has'} extracted document items available to view.
           </p>
         </div>
       )}
 
-      {/* ── Properties ────────────────────────────────────────────────────── */}
+      {/* ── Properties ── */}
       {properties.length === 0 ? (
         <EmptyState />
       ) : (
@@ -180,6 +170,13 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* ── Legal disclaimer ── */}
+      <p className="text-xs text-gray-400 text-center pt-2">
+        PropertyOwl AI extracts and displays information from uploaded documents only. Not legal advice.
+        {' '}<Link href="/terms" className="underline hover:text-gray-600">Terms of Use</Link>
+        {' · '}<Link href="/privacy" className="underline hover:text-gray-600">Privacy Policy</Link>
+      </p>
     </div>
   )
 }
@@ -189,8 +186,7 @@ export default function DashboardPage() {
 function StatCard({ label, value, sub, icon, action, highlight, flagged }: {
   label: string; value: number; sub: string; icon: string
   action?: { label: string; href: string }
-  highlight?: boolean
-  flagged?: boolean
+  highlight?: boolean; flagged?: boolean
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -214,21 +210,18 @@ function StatCard({ label, value, sub, icon, action, highlight, flagged }: {
 // ─── Property Card ────────────────────────────────────────────────────────────
 
 function PropertyCard({ property: p }: { property: Property }) {
-  const attn = attentionLevel(p.risk_score)
+  const attn = itemsLabel(p.risk_score, p.s32_reviewed)
   const price = p.price ? `$${p.price.toLocaleString('en-AU')}` : 'Price not set'
-
-  // Status: what stage is this property at?
   const statusLabel = !p.s32_reviewed ? 'Not yet reviewed' : 'Reviewed'
   const statusColor = !p.s32_reviewed ? 'text-gray-400 bg-gray-100' : 'text-emerald-700 bg-emerald-50'
 
   return (
     <Link href={`/dashboard/property/${p.id}`}>
       <div className="bg-white rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-150 overflow-hidden group cursor-pointer h-full flex flex-col">
-        {/* Top accent */}
-        <div className="h-1" style={{ background: p.s32_reviewed ? (p.risk_score && p.risk_score >= 8 ? '#E24B4A' : p.risk_score && p.risk_score >= 5 ? '#EF9F27' : '#16a34a') : '#D1D5DB' }} />
+        {/* Neutral top accent */}
+        <div className="h-1" style={{ background: p.s32_reviewed ? '#E8001D' : '#D1D5DB' }} />
 
         <div className="p-5 flex-1 flex flex-col">
-          {/* Header row */}
           <div className="flex items-start justify-between gap-2 mb-4">
             <span className="text-xl flex-shrink-0">{typeIcon[p.property_type] ?? '🏠'}</span>
             <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -241,7 +234,6 @@ function PropertyCard({ property: p }: { property: Property }) {
             </div>
           </div>
 
-          {/* Address */}
           <div className="flex-1">
             <h3 className="font-bold text-gray-900 text-sm leading-snug group-hover:text-[#E8001D] transition-colors">
               {p.address}
@@ -249,14 +241,12 @@ function PropertyCard({ property: p }: { property: Property }) {
             <p className="text-gray-400 text-xs mt-0.5">{p.suburb}{p.postcode ? ` ${p.postcode}` : ''}, VIC</p>
           </div>
 
-          {/* Price + attention level */}
           <div className="flex items-end justify-between mt-4 pt-3 border-t border-gray-100">
             <div>
               <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-0.5">Asking</p>
               <p className="text-sm font-bold text-gray-900">{price}</p>
             </div>
-
-            {p.s32_reviewed && p.risk_score !== null ? (
+            {p.s32_reviewed ? (
               <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg ${attn.bg}`}>
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${attn.dot}`} />
                 <span className={`text-xs font-semibold ${attn.color}`}>{attn.label}</span>
@@ -267,7 +257,6 @@ function PropertyCard({ property: p }: { property: Property }) {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="px-5 pb-4">
           <span className="flex items-center gap-1 text-xs text-[#E8001D] font-semibold">
             View details <span className="group-hover:translate-x-0.5 transition-transform inline-block">→</span>
@@ -288,14 +277,14 @@ function EmptyState() {
       </div>
       <h3 className="text-lg font-bold text-gray-900 mb-2">No properties yet</h3>
       <p className="text-gray-500 text-sm max-w-sm mx-auto mb-6">
-        Add a property you're considering and PropertyOwl AI will help you review the documents before you bid.
+        Add a property you're considering and PropertyOwl AI will extract and display information from the documents.
       </p>
       <Link href="/dashboard/add-property"
         className="inline-block bg-[#E8001D] hover:bg-red-700 text-white px-7 py-2.5 rounded-xl font-bold text-sm transition-colors">
         Add Your First Property →
       </Link>
       <div className="mt-8 flex items-center justify-center gap-8">
-        {[['📄', 'Upload S32 & Contract'], ['🔍', 'AI reviews the docs'], ['✅', 'Bid with confidence']].map(([icon, label]) => (
+        {[['📄', 'Upload S32 & Contract'], ['🔍', 'AI extracts the info'], ['📋', 'Review at a glance']].map(([icon, label]) => (
           <div key={label} className="flex flex-col items-center gap-1.5">
             <span className="text-xl">{icon}</span>
             <span className="text-xs text-gray-400 font-medium">{label}</span>

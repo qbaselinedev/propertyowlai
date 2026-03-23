@@ -52,16 +52,16 @@ export default function LoginPage() {
           <span className="text-2xl font-black text-white">PropertyOwl<span className="text-[#E8001D]"> AI</span></span>
         </div>
         <h2 className="text-3xl font-black text-white mb-3 leading-tight">
-          Know before<br />you bid.
+          See the full picture<br />of any property.
         </h2>
         <p className="text-gray-400 mb-10 text-sm leading-relaxed">
-          AI-powered Section 32 reviews for Victorian property buyers. Spot red flags before your conveyancer does.
+          AI-powered property document extraction for Victorian property buyers. See the full picture of any property.
         </p>
         {[
-          { icon: "⚖️", text: "18+ Victorian legal compliance checks" },
-          { icon: "🎯", text: "PropOwl Risk Score 0–100" },
-          { icon: "💬", text: "Negotiation brief & conveyancer handoff" },
-          { icon: "🔍", text: "Online property intelligence scan" },
+          { icon: "📄", text: "S32 & Contract of Sale information extraction" },
+          { icon: "🗺️", text: "Planning zones, overlays & flood zone display" },
+          { icon: "🏫", text: "School zones & suburb information" },
+          { icon: "🌐", text: "Deep online property information search" },
         ].map((f) => (
           <div key={f.text} className="flex items-center gap-3 mb-4">
             <span className="text-lg">{f.icon}</span>
@@ -69,7 +69,7 @@ export default function LoginPage() {
           </div>
         ))}
         <div className="mt-10 p-4 bg-white/5 rounded-lg border border-white/10 text-xs text-gray-500 leading-relaxed">
-          ⚠️ Informal review tool only. Not a substitute for licensed conveyancing advice.
+          ⚠️ Information display only. PropertyOwl AI extracts document information — not legal advice.
         </div>
       </div>
 
@@ -153,7 +153,7 @@ export default function LoginPage() {
           </p>
 
           <div className="mt-6 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 leading-relaxed">
-            ⚠️ <strong>Not legal advice.</strong> PropertyOwl AI is an informal review tool. Always verify with a licensed Victorian conveyancer before signing.
+            ⚠️ <strong>Information display only.</strong> PropertyOwl AI extracts and displays document information. Not legal advice. Always seek independent professional advice before making property decisions.
           </div>
         </div>
       </div>
