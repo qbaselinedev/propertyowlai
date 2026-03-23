@@ -66,8 +66,8 @@ interface ContractAnalysis {
 }
 
 const REA = '#E8001D'
-const TABS = ['Contract Scan', 'Online Scan']
-const CONTRACT_SUBTABS = ['Overview', 'S32 Review', 'Document Summary', 'Items Identified', 'Contract Brief', 'Nothing Detected']
+const TABS = ['Document Information', 'Online Scan']
+const CONTRACT_SUBTABS = ['Overview', 'S32 Information', 'Items Detected', 'Questions Identified', 'Sale Information', 'AI Analysed']
 
 const sev = {
   high:   { bg: 'bg-red-50',   border: 'border-red-200',   text: 'text-red-700',   badge: 'bg-red-100 text-red-700',   strip: '#DC2626', icon: '🔴' },
@@ -75,10 +75,10 @@ const sev = {
   low:    { bg: 'bg-blue-50',  border: 'border-blue-200',  text: 'text-blue-700',  badge: 'bg-blue-100 text-blue-700',  strip: '#3B82F6', icon: '🔵' },
 }
 const stc = {
-  clear:          { color: 'text-emerald-600', bg: 'bg-emerald-50', icon: '✓' },
+  clear:          { color: 'text-gray-600',    bg: 'bg-gray-50',    icon: '✓' },
   issues:         { color: 'text-red-600',     bg: 'bg-red-50',     icon: '!' },
   issues_found:   { color: 'text-red-600',     bg: 'bg-red-50',     icon: '!' },
-  not_provided:   { color: 'text-amber-600',   bg: 'bg-amber-50',   icon: '?' },
+  information_missing:   { color: 'text-amber-600',   bg: 'bg-amber-50',   icon: '?' },
   not_applicable: { color: 'text-gray-400',    bg: 'bg-gray-50',    icon: '—' },
   incomplete:     { color: 'text-amber-600',   bg: 'bg-amber-50',   icon: '?' },
 } as Record<string, { color: string; bg: string; icon: string }>
@@ -99,7 +99,7 @@ export default function PropertyDetailPage() {
   const [isDemo, setIsDemo] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState('Contract Scan')
+  const [activeTab, setActiveTab] = useState('Document Information')
   const [contractSubTab, setContractSubTab] = useState('Overview')
   const [uploading, setUploading] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
@@ -347,12 +347,12 @@ export default function PropertyDetailPage() {
               </h1>
               <p className="text-gray-500 text-xs mt-0.5">{property.suburb}{property.postcode ? `, Victoria ${property.postcode}` : ''}</p>
               <div className="flex flex-wrap gap-1.5 mt-2">
-                {(property.s32_reviewed || !!s32) && <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ S32 Reviewed</span>}
-                {!!contract ? <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ Contract Reviewed</span>
+                {(property.s32_reviewed || !!s32) && <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ S32 Extracted</span>}
+                {!!contract ? <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ Sale Doc Extracted</span>
                   : <span className="text-[11px] bg-gray-100 text-gray-500 font-bold px-2 py-0.5 rounded-full">⏳ Contract Pending</span>}
                 {!!scan ? <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ Online Scan</span>
                   : <span className="text-[11px] bg-gray-100 text-gray-500 font-bold px-2 py-0.5 rounded-full">⏳ Scan Pending</span>}
-                {issueCount > 0 && <button onClick={() => { setActiveTab('Contract Scan'); setContractSubTab('Document Summary') }} className="text-[11px] bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full hover:bg-red-200 transition-colors">{issueCount} item{issueCount !== 1 ? 's' : ''} detected</button>}
+                {issueCount > 0 && <button onClick={() => { setActiveTab('Document Information'); setContractSubTab('Items Detected') }} className="text-[11px] bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full hover:bg-red-200 transition-colors">{issueCount} item{issueCount !== 1 ? 's' : ''} detected</button>}
               </div>
             </div>
             {/* Right — meta */}
@@ -389,16 +389,16 @@ export default function PropertyDetailPage() {
 
       {/* ── ONE unified tab box ── */}
       <div className="bg-white rounded-xl border-2 overflow-hidden"
-           style={{borderColor: activeTab === 'Contract Scan' ? '#E8001D' : '#334155'}}>
+           style={{borderColor: activeTab === 'Document Information' ? '#E8001D' : '#334155'}}>
 
         {/* Row 1: main parent tabs + action buttons */}
         <div className="flex items-center justify-between px-3 pt-0"
-             style={{background: activeTab === 'Contract Scan' ? '#FFF8F8' : '#F8FAFC',
-                     borderBottom: `2px solid ${activeTab === 'Contract Scan' ? '#FECACA' : '#CBD5E1'}`}}>
+             style={{background: activeTab === 'Document Information' ? '#FFF8F8' : '#F8FAFC',
+                     borderBottom: `2px solid ${activeTab === 'Document Information' ? '#FECACA' : '#CBD5E1'}`}}>
           <div className="flex gap-1 py-2">
             {TABS.map(tab => {
               const isActive = activeTab === tab
-              const tabColor = tab === 'Contract Scan' ? '#E8001D' : '#334155'
+              const tabColor = tab === 'Document Information' ? '#E8001D' : '#334155'
               return (
                 <button key={tab} onClick={() => setActiveTab(tab)}
                   className="flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all whitespace-nowrap rounded-lg"
@@ -410,11 +410,11 @@ export default function PropertyDetailPage() {
                     color: '#9CA3AF',
                     background: 'transparent'
                   }}>
-                  <span>{tab === 'Contract Scan' ? '📄' : '🔍'}</span>
+                  <span>{tab === 'Document Information' ? '📄' : '🔍'}</span>
                   <span>{tab}</span>
-                  {isActive && tab === 'Contract Scan' && (s32 || contract) && <span className="text-[10px] bg-white/30 px-1.5 py-0.5 rounded-full font-bold">✓</span>}
+                  {isActive && tab === 'Document Information' && (s32 || contract) && <span className="text-[10px] bg-white/30 px-1.5 py-0.5 rounded-full font-bold">✓</span>}
                   {isActive && tab === 'Online Scan' && scan && <span className="text-[10px] bg-white/30 px-1.5 py-0.5 rounded-full font-bold">✓</span>}
-                  {!isActive && tab === 'Contract Scan' && (s32 || contract) && <span className="text-[10px] text-emerald-500 font-bold">✓</span>}
+                  {!isActive && tab === 'Document Information' && (s32 || contract) && <span className="text-[10px] text-emerald-500 font-bold">✓</span>}
                   {!isActive && tab === 'Online Scan' && scan && <span className="text-[10px] text-emerald-500 font-bold">✓</span>}
                 </button>
               )
@@ -428,19 +428,19 @@ export default function PropertyDetailPage() {
               ⚖️ Not legal advice — always engage a conveyancer
             </span>
 
-            {activeTab === 'Contract Scan' && (s32 || contract) && (
+            {activeTab === 'Document Information' && (s32 || contract) && (
               <button onClick={handleDownloadPack} disabled={downloading}
                 className="flex items-center gap-1.5 text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-all disabled:opacity-50"
                 style={{background: '#E8001D'}}>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 10h10" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                {downloading ? '…' : 'Document Summary PDF'}
+                {downloading ? '…' : 'Document Information PDF'}
               </button>
             )}
-            {activeTab === 'Contract Scan' && (
+            {activeTab === 'Document Information' && (
               <button onClick={triggerUpload} disabled={!!uploading}
                 className="text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
                 style={{background: '#1A1A1A'}}>
-                {uploading ? '⟳ Processing…' : (s32 || contract) ? '↑ Re-analyse' : '↑ Upload Documents'}
+                {uploading ? '⟳ Processing…' : (s32 || contract) ? '↑ Re-extract' : '↑ Upload Documents'}
               </button>
             )}
             {activeTab === 'Online Scan' && scan && (
@@ -460,8 +460,8 @@ export default function PropertyDetailPage() {
           </div>
         </div>
 
-        {/* Row 2: checklist grid (inside Contract Scan tab, above sub-tabs) */}
-        {activeTab === 'Contract Scan' && (s32 || contract) && (
+        {/* Row 2: checklist grid (inside Document Information tab, above sub-tabs) */}
+        {activeTab === 'Document Information' && (s32 || contract) && (
           <div className="border-b border-gray-100 bg-white px-4 py-3">
             <ChecklistPanel s32={s32} contract={contract} onNavigate={(t: string) => {
               setContractSubTab(t)
@@ -470,7 +470,7 @@ export default function PropertyDetailPage() {
         )}
 
         {/* Row 3: contract sub-tabs */}
-        {activeTab === 'Contract Scan' && (s32 || contract) && (
+        {activeTab === 'Document Information' && (s32 || contract) && (
           <div className="flex border-b border-gray-100 bg-white px-3">
             {CONTRACT_SUBTABS.map(sub => (
               <button key={sub} onClick={() => setContractSubTab(sub)}
@@ -495,16 +495,16 @@ export default function PropertyDetailPage() {
 
         {/* Tab content */}
         <div className="p-5 space-y-4"
-             style={{background: activeTab === 'Contract Scan' ? '#FFF9F9' : '#F8FAFC'}}>
-          {activeTab === 'Contract Scan' && !(s32 || contract) && (
+             style={{background: activeTab === 'Document Information' ? '#FFF9F9' : '#F8FAFC'}}>
+          {activeTab === 'Document Information' && !(s32 || contract) && (
             <ContractScanEmptyState credits={credits} onUpload={triggerUpload} />
           )}
-          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Overview'          && <OverviewTab s32={s32} contract={contract} property={property} credits={credits} onUpload={triggerUpload} onNavigate={(t: string) => setContractSubTab(t)} onDownload={handleDownloadPack} />}
-          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'S32 Review'        && <S32ReviewTab s32={s32} onUpload={triggerUpload} credits={credits} />}
-          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Document Summary'  && <RiskAnalysisTab s32={s32} contract={contract} property={property} />}
-          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Items Identified'  && <NegotiationBriefTab s32={s32} contract={contract} />}
-          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Contract Brief'    && <ContractTab contract={contract} credits={credits} onUpload={triggerUpload} />}
-          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Nothing Detected'  && <ConfirmedClearTab s32={s32} contract={contract} />}
+          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'Overview'          && <OverviewTab s32={s32} contract={contract} property={property} credits={credits} onUpload={triggerUpload} onNavigate={(t: string) => setContractSubTab(t)} onDownload={handleDownloadPack} />}
+          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'S32 Information'        && <S32ReviewTab s32={s32} onUpload={triggerUpload} credits={credits} />}
+          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'Items Detected'  && <RiskAnalysisTab s32={s32} contract={contract} property={property} />}
+          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'Questions Identified'  && <NegotiationBriefTab s32={s32} contract={contract} />}
+          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'Sale Information'    && <ContractTab contract={contract} credits={credits} onUpload={triggerUpload} />}
+          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'AI Analysed'  && <ConfirmedClearTab s32={s32} contract={contract} />}
           {activeTab === 'Online Scan'   && <PropertyScanTab scan={scan} scanning={scanning} onRunScan={handleRunScan} onDownloadPdf={handleDownloadScanPdf} downloadingPdf={downloadingScan} property={property} credits={credits} />}
         </div>
       </div>
@@ -535,7 +535,7 @@ function ChecklistPanel({ s32, contract, onNavigate }: { s32: S32Analysis | null
   const ratesVal = o?.council_rates ?? null
 
   const ocStatus = !s32 ? 'pending' : !oc?.applicable ? 'pass' : oc.status === 'clear' ? 'pass' : oc.status === 'issues' ? 'fail' : 'warn'
-  const ocVal = !oc?.applicable ? 'Not applicable' : oc?.annual_fee ?? (oc?.applicable ? 'Applicable' : null)
+  const ocVal = !oc?.applicable ? 'Not in document' : oc?.annual_fee ?? (oc?.applicable ? 'Applicable' : null)
 
   const hasReview = !!(s32 || contract)
   const iconMap: Record<string, {bg:string;iconCls:string;icon:string;valCls:string}> = {
@@ -548,54 +548,54 @@ function ChecklistPanel({ s32, contract, onNavigate }: { s32: S32Analysis | null
   const groups = [
     {
       label: 'Land & Title',
-      tab: 'S32 Review',
+      tab: 'S32 Information',
       count: !s32 ? '—' : [mortgageStatus, ratesStatus === 'fail' ? 'fail' : null].filter(x => x === 'fail').length || null,
       items: [
-        { label: 'Mortgage', status: mortgageStatus, value: mortgageVal, tab: 'S32 Review' },
-        { label: 'Title Search', status: s32 ? (t?.volume_folio ? 'pass' : 'warn') : 'pending', value: t?.volume_folio ? `Vol ${t.volume_folio} — clear` : null, tab: 'S32 Review' },
-        { label: 'Zoning', status: s32 ? (p?.zone ? 'pass' : 'warn') : 'pending', value: p?.zone ?? null, tab: 'S32 Review' },
-        { label: 'Overlays', status: s32 ? ((p?.overlays?.length ?? 0) > 0 ? 'warn' : 'pass') : 'pending', value: (p?.overlays?.length ?? 0) > 0 ? `${p!.overlays!.length} detected` : s32 ? 'None detected' : null, tab: 'S32 Review' },
-        { label: 'Building Permits', status: s32 ? (bp?.status === 'clear' ? 'pass' : bp?.permits?.length ? 'warn' : 'pass') : 'pending', value: bp?.status === 'clear' ? 'None found' : null, tab: 'S32 Review' },
-        { label: 'Easements', status: s32 ? ((ec?.items?.length ?? 0) > 0 ? 'warn' : 'pass') : 'pending', value: (ec?.items?.length ?? 0) > 0 ? `${ec!.items!.length} recorded` : s32 ? 'None noted' : null, tab: 'S32 Review' },
+        { label: 'Mortgage', status: mortgageStatus, value: mortgageVal, tab: 'S32 Information' },
+        { label: 'Title Search', status: s32 ? (t?.volume_folio ? 'pass' : 'warn') : 'pending', value: t?.volume_folio ? `Vol ${t.volume_folio}` : null, tab: 'S32 Information' },
+        { label: 'Zoning', status: s32 ? (p?.zone ? 'pass' : 'warn') : 'pending', value: p?.zone ?? null, tab: 'S32 Information' },
+        { label: 'Overlays', status: s32 ? ((p?.overlays?.length ?? 0) > 0 ? 'warn' : 'pass') : 'pending', value: (p?.overlays?.length ?? 0) > 0 ? `${p!.overlays!.length} detected` : s32 ? 'None detected' : null, tab: 'S32 Information' },
+        { label: 'Building Permits', status: s32 ? (bp?.status === 'clear' ? 'pass' : bp?.permits?.length ? 'warn' : 'pass') : 'pending', value: bp?.status === 'clear' ? 'None in document' : null, tab: 'S32 Information' },
+        { label: 'Easements', status: s32 ? ((ec?.items?.length ?? 0) > 0 ? 'warn' : 'pass') : 'pending', value: (ec?.items?.length ?? 0) > 0 ? `${ec!.items!.length} recorded` : s32 ? 'None in document' : null, tab: 'S32 Information' },
       ]
     },
     {
       label: 'Financials & Outgoings',
-      tab: 'S32 Review',
+      tab: 'S32 Information',
       count: !s32 ? '—' : [ratesStatus === 'fail' ? 'fail' : null].filter(Boolean).length || null,
       items: [
-        { label: 'Council Rates', status: ratesStatus, value: ratesVal, tab: 'S32 Review' },
-        { label: 'OC Annual Levy', status: ocStatus, value: ocVal, tab: 'S32 Review' },
-        { label: 'Land Tax', status: s32 ? 'pass' : 'pending', value: o?.land_tax ?? null, tab: 'S32 Review' },
-        { label: 'Windfall Gains Tax', status: s32 ? 'pass' : 'pending', value: o?.windfall_gains_tax ?? null, tab: 'S32 Review' },
-        { label: 'Water Charges', status: s32 ? (o?.water_charges ? 'pass' : 'pending') : 'pending', value: o?.water_charges ?? null, tab: 'S32 Review' },
-        { label: 'GST Status', status: s32 ? 'pass' : 'pending', value: s32 ? 'Confirmed' : null, tab: 'Contract Brief' },
+        { label: 'Council Rates', status: ratesStatus, value: ratesVal, tab: 'S32 Information' },
+        { label: 'OC Annual Levy', status: ocStatus, value: ocVal, tab: 'S32 Information' },
+        { label: 'Land Tax', status: s32 ? 'pass' : 'pending', value: o?.land_tax ?? null, tab: 'S32 Information' },
+        { label: 'Windfall Gains Tax', status: s32 ? 'pass' : 'pending', value: o?.windfall_gains_tax ?? null, tab: 'S32 Information' },
+        { label: 'Water Charges', status: s32 ? (o?.water_charges ? 'pass' : 'pending') : 'pending', value: o?.water_charges ?? null, tab: 'S32 Information' },
+        { label: 'GST Status', status: s32 ? 'pass' : 'pending', value: s32 ? 'As per document' : null, tab: 'Sale Information' },
       ]
     },
     {
       label: 'Ownership & Use',
-      tab: 'S32 Review',
+      tab: 'S32 Information',
       count: !s32 ? '—' : null,
       items: [
-        { label: 'Tenancy', status: s32 ? 'warn' : 'pending', value: s32 ? 'Residential rental agreement in pla…' : null, tab: 'S32 Review' },
-        { label: 'Owners Corporation', status: ocStatus, value: !oc?.applicable ? 'Not in S32' : ocStatus === 'fail' ? 'Issues noted' : 'Applicable', tab: 'S32 Review' },
-        { label: 'Planning Certificate', status: s32 ? (p?.zone ? 'pass' : 'pending') : 'pending', value: p?.zone ?? null, tab: 'S32 Review' },
-        { label: 'OC Meeting Minutes', status: !oc?.applicable ? 'pending' : 'warn', value: !oc?.applicable ? null : 'Obtain from OC manager', tab: 'S32 Review' },
-        { label: 'Insurance (OC)', status: !oc?.applicable ? 'pending' : 'warn', value: !oc?.applicable ? null : 'Contract pending', tab: 'S32 Review' },
-        { label: 'Vendor Warranties', status: s32 ? 'pass' : 'pending', value: s32 ? 'Electricity, Gas, Water, Sewer' : null, tab: 'S32 Review' },
+        { label: 'Tenancy', status: s32 ? 'warn' : 'pending', value: s32 ? 'Residential rental agreement in pla…' : null, tab: 'S32 Information' },
+        { label: 'Owners Corporation', status: ocStatus, value: !oc?.applicable ? 'Not in document' : oc?.annual_fee ?? 'Present in document', tab: 'S32 Information' },
+        { label: 'Planning Certificate', status: s32 ? (p?.zone ? 'pass' : 'pending') : 'pending', value: p?.zone ?? null, tab: 'S32 Information' },
+        { label: 'OC Meeting Minutes', status: !oc?.applicable ? 'pending' : 'warn', value: !oc?.applicable ? null : 'Obtain from OC manager', tab: 'S32 Information' },
+        { label: 'Insurance (OC)', status: !oc?.applicable ? 'pending' : 'warn', value: !oc?.applicable ? null : 'Present in document', tab: 'S32 Information' },
+        { label: 'Vendor Warranties', status: s32 ? 'pass' : 'pending', value: s32 ? 'Electricity, Gas, Water, Sewer' : null, tab: 'S32 Information' },
       ]
     },
     {
       label: 'Contract Conditions',
-      tab: 'Contract Brief',
+      tab: 'Sale Information',
       count: !contract ? '—' : (sc?.conditions?.filter((c:any) => c.risk_level === 'high').length ?? 0) || null,
       items: [
-        { label: 'Purchase Price', status: contract ? 'pass' : 'pending', value: pd?.purchase_price ?? null, tab: 'Contract Brief' },
-        { label: 'Deposit Amount & Holder', status: contract ? 'pass' : 'pending', value: pd?.deposit_amount ? `${pd.deposit_amount}${pd.deposit_holder ? ` · ${pd.deposit_holder}` : ''}` : null, tab: 'Contract Brief' },
-        { label: 'Settlement Date', status: contract ? (st?.settlement_date ? 'pass' : 'warn') : 'pending', value: st?.settlement_date ?? null, tab: 'Contract Brief' },
-        { label: 'Cooling Off Status', status: contract ? (co?.waived ? 'warn' : 'pass') : 'pending', value: contract ? (co?.waived ? 'Waived' : co?.period ?? '3 business days') : null, tab: 'Contract Brief' },
-        { label: 'Finance / Build Clauses', status: contract ? ((sc?.conditions?.length ?? 0) > 0 ? 'warn' : 'pass') : 'pending', value: (sc?.conditions?.length ?? 0) > 0 ? 'Check special conditions' : contract ? 'None' : null, tab: 'Contract Brief' },
-        { label: 'Special Conditions', status: contract ? ((sc?.conditions?.filter((c:any)=>c.risk_level==='high').length ?? 0) > 0 ? 'fail' : 'pass') : 'pending', value: contract ? ((sc?.conditions?.length ?? 0) > 0 ? `${sc!.conditions!.length} identified` : 'None') : null, tab: 'Contract Brief' },
+        { label: 'Purchase Price', status: contract ? 'pass' : 'pending', value: pd?.purchase_price ?? null, tab: 'Sale Information' },
+        { label: 'Deposit Amount & Holder', status: contract ? 'pass' : 'pending', value: pd?.deposit_amount ? `${pd.deposit_amount}${pd.deposit_holder ? ` · ${pd.deposit_holder}` : ''}` : null, tab: 'Sale Information' },
+        { label: 'Settlement Date', status: contract ? (st?.settlement_date ? 'pass' : 'warn') : 'pending', value: st?.settlement_date ?? null, tab: 'Sale Information' },
+        { label: 'Cooling Off Status', status: contract ? (co?.waived ? 'warn' : 'pass') : 'pending', value: contract ? (co?.waived ? 'Waived' : co?.period ?? '3 business days') : null, tab: 'Sale Information' },
+        { label: 'Finance / Build Clauses', status: contract ? ((sc?.conditions?.length ?? 0) > 0 ? 'warn' : 'pass') : 'pending', value: (sc?.conditions?.length ?? 0) > 0 ? 'Check special conditions' : contract ? 'None' : null, tab: 'Sale Information' },
+        { label: 'Special Conditions', status: contract ? ((sc?.conditions?.filter((c:any)=>c.risk_level==='high').length ?? 0) > 0 ? 'fail' : 'pass') : 'pending', value: contract ? ((sc?.conditions?.length ?? 0) > 0 ? `${sc!.conditions!.length} identified` : 'None') : null, tab: 'Sale Information' },
       ]
     },
   ]
@@ -721,7 +721,7 @@ function OverviewTab({ s32, contract, property, credits, onUpload, onNavigate, o
   )
 }
 
-// ─── S32 Review Tab ───────────────────────────────────────────────────────────
+// ─── S32 Information Tab ───────────────────────────────────────────────────────────
 
 type FilterType = 'all' | 'high' | 'medium' | 'low' | 'clear'
 
@@ -739,7 +739,7 @@ function S32ReviewTab({ s32, onUpload, credits }: { s32: S32Analysis | null; onU
         <div className="bg-white rounded-xl border border-gray-200 p-1.5 flex gap-1">
           {(['all', 'high', 'medium', 'low', 'clear'] as FilterType[]).map(f => {
             const cnt = f === 'all' ? allFlags.length : f === 'clear' ? 0 : counts[f as 'high' | 'medium' | 'low']
-            const label = f === 'all' ? `All (${allFlags.length})` : f === 'clear' ? '✅ Cleared' : `${f === 'high' ? '🔴' : f === 'medium' ? '🟡' : '🔵'} ${f.charAt(0).toUpperCase() + f.slice(1)} (${cnt})`
+            const label = f === 'all' ? `All (${allFlags.length})` : f === 'clear' ? '✅ No items' : `${f === 'high' ? '🔴' : f === 'medium' ? '🟡' : '🔵'} ${f.charAt(0).toUpperCase() + f.slice(1)} (${cnt})`
             return (
               <button key={f} onClick={() => setFilter(f)}
                 className={`flex-1 text-xs font-semibold px-2 py-1.5 rounded-lg transition-all whitespace-nowrap ${filter === f ? 'text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
@@ -778,7 +778,7 @@ function S32ReviewTab({ s32, onUpload, credits }: { s32: S32Analysis | null; onU
       <div className="space-y-4">
         {(s32.positive_findings ?? []).length > 0 && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-            <p className="text-xs font-bold text-emerald-700 mb-2">✅ Positive findings — nothing of concern</p>
+            <p className="text-xs font-bold text-emerald-700 mb-2">✅ Items AI analysed — nothing extracted</p>
             {(s32.positive_findings ?? []).map((f, i) => (
               <p key={i} className="text-xs text-emerald-700 leading-relaxed mt-1">• {f}</p>
             ))}
@@ -788,15 +788,15 @@ function S32ReviewTab({ s32, onUpload, credits }: { s32: S32Analysis | null; onU
           <p className="text-xs font-extrabold text-gray-700 uppercase tracking-wider mb-3">S32 Sections</p>
           {Object.entries(s32.sections ?? {}).map(([key, section]: [string, any]) => {
             if (!section) return null
-            const sc = stc[section.status] ?? stc.not_provided
+            const sc = stc[section.status] ?? stc.information_missing
             const sectionNames: Record<string, string> = {
               title_and_ownership: 'Title & Ownership', planning_and_zoning: 'Planning & Zoning',
               easements_and_covenants: 'Easements & Covenants', building_permits: 'Building Permits',
               owners_corporation: 'Owners Corporation', outgoings: 'Outgoings', vendor_disclosure: 'Vendor Disclosure'
             }
             const statusLabel: Record<string, string> = {
-              clear: 'Clear', issues: 'Issues noted', issues_found: 'Issues noted',
-              not_provided: 'Not provided', not_applicable: 'Not applicable', incomplete: 'Incomplete'
+              clear: 'Extracted', issues: 'See details', issues_found: 'See details',
+              information_missing: 'Not in document', not_applicable: 'Not in document', incomplete: 'Partial'
             }
             return (
               <div key={key} className="flex items-start gap-2 mb-3 pb-3 border-b border-gray-100 last:border-0 last:mb-0 last:pb-0">
@@ -879,7 +879,7 @@ function RiskAnalysisTab({ s32, contract, property }: { s32: S32Analysis | null;
 // ─── Items Identified Tab ────────────────────────────────────────────────────
 
 function NegotiationBriefTab({ s32, contract }: { s32: S32Analysis | null; contract: ContractAnalysis | null }) {
-  if (!s32) return <NoAnalysis msg="Upload your Section 32 to view extracted document information." />
+  if (!s32) return <NoAnalysis msg="Upload your property documents to view extracted information." />
   const points = [...(s32.questions_to_explore ?? []), ...(contract?.questions_to_explore ?? [])]
 
   return (
@@ -907,7 +907,7 @@ function NegotiationBriefTab({ s32, contract }: { s32: S32Analysis | null; contr
   )
 }
 
-// ─── Contract Brief Tab ───────────────────────────────────────────────────────
+// ─── Sale Information Tab ───────────────────────────────────────────────────────
 
 function ContractTab({ contract, credits, onUpload }: { contract: ContractAnalysis | null; credits: number; onUpload: () => void }) {
   if (!contract) return <div className="space-y-4"><NoAnalysis msg="Upload your Contract of Sale to see a contract brief." /><UploadCta credits={credits} onUpload={onUpload} /></div>
@@ -921,7 +921,7 @@ function ContractTab({ contract, credits, onUpload }: { contract: ContractAnalys
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {Object.entries(contract.sections ?? {}).map(([key, section]: [string, any]) => {
         if (!section) return null
-        const sc = stc[section.status] ?? stc.not_provided
+        const sc = stc[section.status] ?? stc.information_missing
         return (
           <div key={key} className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
             <div className="flex items-center justify-between mb-2">
@@ -946,7 +946,7 @@ function ContractTab({ contract, credits, onUpload }: { contract: ContractAnalys
   )
 }
 
-// ─── Nothing Detected Tab ──────────────────────────────────────────────────────
+// ─── AI Analysed Tab ──────────────────────────────────────────────────────
 
 function ConfirmedClearTab({ s32, contract }: { s32: S32Analysis | null; contract: ContractAnalysis | null }) {
   const allPositive = [
@@ -988,8 +988,8 @@ function ConfirmedClearTab({ s32, contract }: { s32: S32Analysis | null; contrac
       {/* Two-column confirmed clear */}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="text-sm font-black text-gray-900">✅ Nothing Detected</h3>
-          <p className="text-xs text-gray-600 mt-0.5">Areas reviewed with nothing of concern noted based on documents provided</p>
+          <h3 className="text-sm font-black text-gray-900">✅ AI Analysed</h3>
+          <p className="text-xs text-gray-600 mt-0.5">Areas AI analysed — no items extracted from the documentcuments provided</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100">
           <div>
@@ -1005,7 +1005,7 @@ function ConfirmedClearTab({ s32, contract }: { s32: S32Analysis | null; contrac
       {allPositive.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100">
-            <h3 className="text-sm font-black text-gray-900">AI findings — nothing of concern</h3>
+            <h3 className="text-sm font-black text-gray-900">AI analysed — no items extracted</h3>
             <p className="text-xs text-gray-600 mt-0.5">Items explicitly reviewed and found to have no issues</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 divide-gray-100">
@@ -1652,8 +1652,8 @@ function UploadCta({ credits, onUpload }: { credits: number; onUpload: () => voi
       <div className="grid grid-cols-3 divide-x divide-gray-100 border-t border-gray-100">
         {[
           {icon:'📊',t:'Overview',d:'High-level summary with all key findings'},
-          {icon:'🔍',t:'S32 Review',d:'Section-by-section vendor statement analysis'},
-          {icon:'📋',t:'Contract Brief',d:'Price, deposit, settlement, special conditions'},
+          {icon:'🔍',t:'S32 Information',d:'Section-by-section vendor statement analysis'},
+          {icon:'📋',t:'Sale Information',d:'Price, deposit, settlement, special conditions'},
         ].map(({icon,t,d}) => (
           <div key={t} className="px-5 py-4 text-center">
             <span className="text-xl">{icon}</span>
