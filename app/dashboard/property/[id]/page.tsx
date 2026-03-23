@@ -70,17 +70,17 @@ const TABS = ['Document Information', 'Online Scan']
 const CONTRACT_SUBTABS = ['Overview', 'S32 Information', 'Items Detected', 'Questions Identified', 'Sale Information', 'AI Analysed']
 
 const sev = {
-  high:   { bg: 'bg-red-50',   border: 'border-red-200',   text: 'text-red-700',   badge: 'bg-red-100 text-red-700',   strip: '#DC2626', icon: '🔴' },
-  medium: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', badge: 'bg-amber-100 text-amber-700', strip: '#D97706', icon: '🟡' },
+  high:   { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-800', badge: 'bg-gray-100 text-gray-700', strip: '#6B7280', icon: '' },
+  medium: { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-800', badge: 'bg-gray-100 text-gray-700', strip: '#6B7280', icon: '' },
   low:    { bg: 'bg-blue-50',  border: 'border-blue-200',  text: 'text-blue-700',  badge: 'bg-blue-100 text-blue-700',  strip: '#3B82F6', icon: '🔵' },
 }
 const stc = {
   clear:          { color: 'text-gray-600',    bg: 'bg-gray-50',    icon: '✓' },
-  issues:         { color: 'text-red-600',     bg: 'bg-red-50',     icon: '!' },
-  issues_found:   { color: 'text-red-600',     bg: 'bg-red-50',     icon: '!' },
-  information_missing:   { color: 'text-amber-600',   bg: 'bg-amber-50',   icon: '?' },
+  issues:         { color: 'text-gray-600', bg: 'bg-gray-50', icon: '·' },
+  issues_found:   { color: 'text-gray-600', bg: 'bg-gray-50', icon: '·' },
+  information_missing:   { color: 'text-gray-500',   bg: 'bg-gray-50',   icon: '?' },
   not_applicable: { color: 'text-gray-400',    bg: 'bg-gray-50',    icon: '—' },
-  incomplete:     { color: 'text-amber-600',   bg: 'bg-amber-50',   icon: '?' },
+  incomplete:     { color: 'text-gray-500',   bg: 'bg-gray-50',   icon: '?' },
 } as Record<string, { color: string; bg: string; icon: string }>
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -314,7 +314,7 @@ export default function PropertyDetailPage() {
   const riskLabel = !riskScore ? 'Not reviewed' : `${riskScore} item${riskScore !== 1 ? 's' : ''} detected`
   const riskColor = !riskScore ? 'text-gray-400' : 'text-gray-700'
   const allFlags = [...(s32?.items_detected ?? []), ...(contract?.items_detected ?? [])]
-  const issueCount = allFlags.filter(f => f.severity === 'high' || f.severity === 'medium').length
+  const itemCount = allFlags.filter(f => f.severity === 'high' || f.severity === 'medium').length
 
   return (
     <div className="space-y-2 pb-10">
@@ -347,12 +347,12 @@ export default function PropertyDetailPage() {
               </h1>
               <p className="text-gray-500 text-xs mt-0.5">{property.suburb}{property.postcode ? `, Victoria ${property.postcode}` : ''}</p>
               <div className="flex flex-wrap gap-1.5 mt-2">
-                {(property.s32_reviewed || !!s32) && <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ S32 Extracted</span>}
-                {!!contract ? <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ Sale Doc Extracted</span>
+                {(property.s32_reviewed || !!s32) && <span className="text-[11px] bg-gray-100 text-gray-600 font-medium px-2 py-0.5 rounded-full">✓ S32 Extracted</span>}
+                {!!contract ? <span className="text-[11px] bg-gray-100 text-gray-600 font-medium px-2 py-0.5 rounded-full">✓ Sale Doc Extracted</span>
                   : <span className="text-[11px] bg-gray-100 text-gray-500 font-bold px-2 py-0.5 rounded-full">⏳ Contract Pending</span>}
-                {!!scan ? <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ Online Scan</span>
+                {!!scan ? <span className="text-[11px] bg-gray-100 text-gray-600 font-medium px-2 py-0.5 rounded-full">✓ Online Scan</span>
                   : <span className="text-[11px] bg-gray-100 text-gray-500 font-bold px-2 py-0.5 rounded-full">⏳ Scan Pending</span>}
-                {issueCount > 0 && <button onClick={() => { setActiveTab('Document Information'); setContractSubTab('Items Detected') }} className="text-[11px] bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full hover:bg-red-200 transition-colors">{issueCount} item{issueCount !== 1 ? 's' : ''} detected</button>}
+                {itemCount > 0 && <button onClick={() => { setActiveTab('Document Information'); setContractSubTab('Items Detected') }} className="text-[11px] bg-gray-100 text-gray-600 font-medium px-2 py-0.5 rounded-full">{itemCount} item{itemCount !== 1 ? 's' : ''} detected</button>}
               </div>
             </div>
             {/* Right — meta */}
@@ -414,8 +414,8 @@ export default function PropertyDetailPage() {
                   <span>{tab}</span>
                   {isActive && tab === 'Document Information' && (s32 || contract) && <span className="text-[10px] bg-white/30 px-1.5 py-0.5 rounded-full font-bold">✓</span>}
                   {isActive && tab === 'Online Scan' && scan && <span className="text-[10px] bg-white/30 px-1.5 py-0.5 rounded-full font-bold">✓</span>}
-                  {!isActive && tab === 'Document Information' && (s32 || contract) && <span className="text-[10px] text-emerald-500 font-bold">✓</span>}
-                  {!isActive && tab === 'Online Scan' && scan && <span className="text-[10px] text-emerald-500 font-bold">✓</span>}
+                  {!isActive && tab === 'Document Information' && (s32 || contract) && <span className="text-[10px] text-gray-400 font-medium">✓</span>}
+                  {!isActive && tab === 'Online Scan' && scan && <span className="text-[10px] text-gray-400 font-medium">✓</span>}
                 </button>
               )
             })}
@@ -424,8 +424,8 @@ export default function PropertyDetailPage() {
           {/* Action buttons */}
           <div className="flex items-center gap-2">
             {/* Legal disclaimer inline */}
-            <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg hidden lg:block">
-              ⚖️ Not legal advice — always engage a conveyancer
+            <span className="text-[10px] text-gray-500 bg-gray-50 border border-gray-200 px-2 py-1 rounded-lg hidden lg:block">
+              ⚖️ Information display only — not legal advice
             </span>
 
             {activeTab === 'Document Information' && (s32 || contract) && (
@@ -487,9 +487,9 @@ export default function PropertyDetailPage() {
 
         {/* uploading notice */}
         {uploading && (
-          <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex items-center gap-3">
-            <span className="text-amber-500 text-base animate-spin inline-block">⟳</span>
-            <div><p className="text-sm font-bold text-amber-800">{uploading}</p><p className="text-xs text-amber-600">Do not close this page.</p></div>
+          <div className="bg-gray-50 border-b border-gray-200 px-5 py-3 flex items-center gap-3">
+            <span className="text-gray-500 text-base animate-spin inline-block">⟳</span>
+            <div><p className="text-sm font-medium text-gray-700">{uploading}</p><p className="text-xs text-gray-400">Keep this page open.</p></div>
           </div>
         )}
 
@@ -539,9 +539,9 @@ function ChecklistPanel({ s32, contract, onNavigate }: { s32: S32Analysis | null
 
   const hasReview = !!(s32 || contract)
   const iconMap: Record<string, {bg:string;iconCls:string;icon:string;valCls:string}> = {
-    pass:    { bg: 'bg-emerald-100', iconCls: 'text-emerald-600', icon: '✓', valCls: 'text-emerald-700' },
-    fail:    { bg: 'bg-red-100',     iconCls: 'text-red-600',     icon: '!', valCls: 'text-red-700' },
-    warn:    { bg: 'bg-amber-100',   iconCls: 'text-amber-600',   icon: '~', valCls: 'text-amber-700' },
+    pass:    { bg: 'bg-gray-100', iconCls: 'text-gray-500', icon: '·', valCls: 'text-gray-700' },
+    fail:    { bg: 'bg-gray-100', iconCls: 'text-gray-500', icon: '·', valCls: 'text-gray-700' },
+    warn:    { bg: 'bg-gray-100', iconCls: 'text-gray-500', icon: '·', valCls: 'text-gray-700' },
     pending: { bg: 'bg-gray-100',    iconCls: 'text-gray-400',    icon: '·', valCls: 'text-gray-400' },
   }
 
@@ -580,7 +580,7 @@ function ChecklistPanel({ s32, contract, onNavigate }: { s32: S32Analysis | null
         { label: 'Tenancy', status: s32 ? 'warn' : 'pending', value: s32 ? 'Residential rental agreement in pla…' : null, tab: 'S32 Information' },
         { label: 'Owners Corporation', status: ocStatus, value: !oc?.applicable ? 'Not in document' : oc?.annual_fee ?? 'Present in document', tab: 'S32 Information' },
         { label: 'Planning Certificate', status: s32 ? (p?.zone ? 'pass' : 'pending') : 'pending', value: p?.zone ?? null, tab: 'S32 Information' },
-        { label: 'OC Meeting Minutes', status: !oc?.applicable ? 'pending' : 'warn', value: !oc?.applicable ? null : 'Obtain from OC manager', tab: 'S32 Information' },
+        { label: 'OC Meeting Minutes', status: !oc?.applicable ? 'pending' : 'warn', value: !oc?.applicable ? null : 'Present in document', tab: 'S32 Information' },
         { label: 'Insurance (OC)', status: !oc?.applicable ? 'pending' : 'warn', value: !oc?.applicable ? null : 'Present in document', tab: 'S32 Information' },
         { label: 'Vendor Warranties', status: s32 ? 'pass' : 'pending', value: s32 ? 'Electricity, Gas, Water, Sewer' : null, tab: 'S32 Information' },
       ]
@@ -594,7 +594,7 @@ function ChecklistPanel({ s32, contract, onNavigate }: { s32: S32Analysis | null
         { label: 'Deposit Amount & Holder', status: contract ? 'pass' : 'pending', value: pd?.deposit_amount ? `${pd.deposit_amount}${pd.deposit_holder ? ` · ${pd.deposit_holder}` : ''}` : null, tab: 'Sale Information' },
         { label: 'Settlement Date', status: contract ? (st?.settlement_date ? 'pass' : 'warn') : 'pending', value: st?.settlement_date ?? null, tab: 'Sale Information' },
         { label: 'Cooling Off Status', status: contract ? (co?.waived ? 'warn' : 'pass') : 'pending', value: contract ? (co?.waived ? 'Waived' : co?.period ?? '3 business days') : null, tab: 'Sale Information' },
-        { label: 'Finance / Build Clauses', status: contract ? ((sc?.conditions?.length ?? 0) > 0 ? 'warn' : 'pass') : 'pending', value: (sc?.conditions?.length ?? 0) > 0 ? 'Check special conditions' : contract ? 'None' : null, tab: 'Sale Information' },
+        { label: 'Finance / Build Clauses', status: contract ? ((sc?.conditions?.length ?? 0) > 0 ? 'warn' : 'pass') : 'pending', value: (sc?.conditions?.length ?? 0) > 0 ? 'Present in document' : contract ? 'None' : null, tab: 'Sale Information' },
         { label: 'Special Conditions', status: contract ? ((sc?.conditions?.filter((c:any)=>c.risk_level==='high').length ?? 0) > 0 ? 'fail' : 'pass') : 'pending', value: contract ? ((sc?.conditions?.length ?? 0) > 0 ? `${sc!.conditions!.length} identified` : 'None') : null, tab: 'Sale Information' },
       ]
     },
@@ -614,9 +614,8 @@ function ChecklistPanel({ s32, contract, onNavigate }: { s32: S32Analysis | null
                 <p className="text-xs font-black text-gray-700 uppercase tracking-wider group-hover:text-gray-900">{group.label}</p>
                 {group.count !== null && group.count !== '—' && (
                   <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
-                    hasIssues ? 'bg-red-100 text-red-700' :
-                    hasReview ? 'bg-amber-100 text-amber-700' :
-                    group.count === 'Pending' ? 'bg-gray-100 text-gray-500' : ''
+                    'bg-gray-100 text-gray-500' 
+                    ||                     group.count === 'Pending' ? 'bg-gray-100 text-gray-500' : ''
                   }`}>
                     {group.count}
                   </span>
@@ -635,18 +634,17 @@ function ChecklistPanel({ s32, contract, onNavigate }: { s32: S32Analysis | null
                     className="w-full text-left hover:bg-gray-50 rounded-lg px-1.5 py-1 -mx-1.5 transition-colors group/item"
                   >
                     <div className="flex items-start gap-2">
-                      <span className={`mt-0.5 w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center flex-shrink-0 ${ic.bg} ${ic.iconCls}`}>
-                        {ic.icon}
+                      <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0 mt-2">
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-gray-700 group-hover/item:text-gray-900 leading-tight">{item.label}</p>
                         {item.value && (
-                          <p className={`text-[11px] font-medium leading-tight mt-0.5 truncate ${ic.valCls}`}>
+                          <p className="text-[11px] text-gray-600 leading-tight mt-0.5 truncate">
                             {item.value}
                           </p>
                         )}
                         {!item.value && item.status === 'pending' && (
-                          <p className="text-[11px] text-gray-300 leading-tight mt-0.5">Contract pending</p>
+                          <p className="text-[11px] text-gray-300 leading-tight mt-0.5">Not in document</p>
                         )}
                       </div>
                     </div>
@@ -674,8 +672,7 @@ function OverviewTab({ s32, contract, property, credits, onUpload, onNavigate, o
       {highFlags.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
-            <p className="text-xs font-black text-red-700 uppercase tracking-wider">Needs immediate attention</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Items detected</p>
           </div>
           {highFlags.map((f: RedFlag, i: number) => <RiskFlagCard key={i} flag={f} index={i} />)}
         </div>
@@ -685,18 +682,17 @@ function OverviewTab({ s32, contract, property, credits, onUpload, onNavigate, o
       {medFlags.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-            <p className="text-xs font-black text-amber-700 uppercase tracking-wider">Worth reviewing</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Also detected</p>
           </div>
           {medFlags.map((f: RedFlag, i: number) => <RiskFlagCard key={i} flag={f} index={i} />)}
         </div>
       )}
 
       {highFlags.length === 0 && medFlags.length === 0 && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 text-center">
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-center">
           <span className="text-3xl">🎉</span>
-          <p className="text-sm font-bold text-emerald-700 mt-2">No high-priority issues found</p>
-          <p className="text-xs text-emerald-600 mt-1">Always verify independently with your conveyancer before exchange.</p>
+          <p className="text-sm font-medium text-gray-600 mt-2">No items detected in this category</p>
+          <p className="text-xs text-gray-400 mt-1">PropertyOwl AI displays extracted document information only.</p>
         </div>
       )}
 
@@ -760,11 +756,11 @@ function S32ReviewTab({ s32, onUpload, credits }: { s32: S32Analysis | null; onU
               return (
                 <div key={i} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                   <div className="p-4">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.badge}`}>{c.icon} {flag.severity.toUpperCase()} · {flag.category}</span>
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">{flag.category}</span>
                     <p className={`text-sm font-semibold ${c.text} mt-2 mb-2`}>{flag.issue}</p>
                     <div className="flex items-start gap-2 bg-gray-50 rounded-lg px-3 py-2">
                       <span className="text-xs flex-shrink-0">💡</span>
-                      <p className="text-xs text-gray-700 leading-relaxed">{flag.recommendation}</p>
+                      
                     </div>
                   </div>
                 </div>
@@ -777,10 +773,10 @@ function S32ReviewTab({ s32, onUpload, credits }: { s32: S32Analysis | null; onU
       {/* Right: Positive findings first, then S32 sections */}
       <div className="space-y-4">
         {(s32.positive_findings ?? []).length > 0 && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-            <p className="text-xs font-bold text-emerald-700 mb-2">✅ Items AI analysed — nothing extracted</p>
+          <div className="bg-gray-50 border border-gray-100 rounded-xl p-4">
+            <p className="text-xs font-medium text-gray-600 mb-2">Items AI analysed — nothing extracted</p>
             {(s32.positive_findings ?? []).map((f, i) => (
-              <p key={i} className="text-xs text-emerald-700 leading-relaxed mt-1">• {f}</p>
+              <p key={i} className="text-xs text-gray-600 leading-relaxed mt-1">• {f}</p>
             ))}
           </div>
         )}
@@ -856,11 +852,11 @@ function RiskAnalysisTab({ s32, contract, property }: { s32: S32Analysis | null;
               return (
                 <div key={i} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                   <div className="p-4">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.badge}`}>{c.icon} {flag.severity.toUpperCase()} · {flag.category}</span>
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">{flag.category}</span>
                     <p className={`text-sm font-semibold ${c.text} mt-2 mb-2`}>{flag.issue}</p>
                     <div className="flex items-start gap-2 bg-gray-50 rounded-lg px-3 py-2">
                       <span className="text-xs flex-shrink-0">💡</span>
-                      <p className="text-xs text-gray-700 leading-relaxed">{flag.recommendation}</p>
+                      
                     </div>
                   </div>
                 </div>
@@ -869,8 +865,8 @@ function RiskAnalysisTab({ s32, contract, property }: { s32: S32Analysis | null;
           </div>
         )}
 
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-          <p className="text-xs text-amber-700 leading-relaxed">⚖️ <strong>Information only.</strong> PropertyOwl AI extracts and displays document information. Not legal advice.</p>
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+          <p className="text-xs text-gray-700 leading-relaxed">⚖️ <strong>Information only.</strong> PropertyOwl AI extracts and displays document information. Not legal advice.</p>
         </div>
     </div>
   )
@@ -900,8 +896,8 @@ function NegotiationBriefTab({ s32, contract }: { s32: S32Analysis | null; contr
           </div>
         )}
       </div>
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-        <p className="text-xs text-amber-700 leading-relaxed">These are suggestions only — always work with a licensed Victorian conveyancer before making any requests or concessions.</p>
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+        <p className="text-xs text-gray-700 leading-relaxed">These are suggestions only — always work with a licensed Victorian conveyancer before making any requests or concessions.</p>
       </div>
     </div>
   )
@@ -934,7 +930,7 @@ function ContractTab({ contract, credits, onUpload }: { contract: ContractAnalys
             {section.settlement_date && <p className="text-xs text-gray-500">Settlement: <span className="font-semibold">{section.settlement_date}</span></p>}
             {section.period          && <p className="text-xs text-gray-500">Period: <span className="font-semibold">{section.period}</span>{section.waived ? ' — WAIVED' : ''}</p>}
             {(section.conditions ?? []).length > 0 && section.conditions.map((c: any, ci: number) => (
-              <div key={ci} className={`mt-2 text-xs rounded-lg px-3 py-2 ${c.risk_level === 'high' ? 'bg-red-50 text-red-700' : c.risk_level === 'medium' ? 'bg-amber-50 text-amber-700' : 'bg-gray-50 text-gray-700'}`}>
+              <div key={ci} className={`mt-2 text-xs rounded-lg px-3 py-2 ${'bg-gray-50 text-gray-700'}`}>
                 <p className="font-semibold">{c.title ?? `Condition ${ci + 1}`}</p>
                 <p className="mt-0.5 leading-relaxed">{c.summary ?? c.verbatim}</p>
               </div>
@@ -973,7 +969,7 @@ function ConfirmedClearTab({ s32, contract }: { s32: S32Analysis | null; contrac
 
   const ClearItem = ({ label, check, detail }: { label: string; check: boolean; detail: string | null }) => (
     <div className={`flex items-start gap-3 px-4 py-3 border-b border-gray-100 last:border-0 ${check ? '' : 'opacity-40'}`}>
-      <span className={`flex-shrink-0 mt-0.5 font-bold text-sm ${check ? 'text-emerald-500' : 'text-gray-300'}`}>
+      <span className={`flex-shrink-0 mt-0.5 font-bold text-sm ${'text-gray-400'}`}>
         {check ? '✓' : '—'}
       </span>
       <div>
@@ -1012,7 +1008,7 @@ function ConfirmedClearTab({ s32, contract }: { s32: S32Analysis | null; contrac
             <div className="divide-y divide-gray-100">
               {allPositive.slice(0, Math.ceil(allPositive.length / 2)).map((f: string, i: number) => (
                 <div key={i} className="flex items-start gap-3 px-5 py-3">
-                  <span className="text-emerald-500 font-bold text-sm flex-shrink-0 mt-0.5">✓</span>
+                  <span className="text-gray-400 text-sm flex-shrink-0 mt-0.5">·</span>
                   <p className="text-sm text-gray-800 leading-relaxed">{f}</p>
                 </div>
               ))}
@@ -1020,7 +1016,7 @@ function ConfirmedClearTab({ s32, contract }: { s32: S32Analysis | null; contrac
             <div className="divide-y divide-gray-100 border-t md:border-t-0 md:border-l border-gray-100">
               {allPositive.slice(Math.ceil(allPositive.length / 2)).map((f: string, i: number) => (
                 <div key={i} className="flex items-start gap-3 px-5 py-3">
-                  <span className="text-emerald-500 font-bold text-sm flex-shrink-0 mt-0.5">✓</span>
+                  <span className="text-gray-400 text-sm flex-shrink-0 mt-0.5">·</span>
                   <p className="text-sm text-gray-800 leading-relaxed">{f}</p>
                 </div>
               ))}
@@ -1029,8 +1025,8 @@ function ConfirmedClearTab({ s32, contract }: { s32: S32Analysis | null; contrac
         </div>
       )}
 
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-        <p className="text-xs text-amber-800 leading-relaxed">
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+        <p className="text-xs text-gray-700 leading-relaxed">
           These items were reviewed and no issues were identified based on the documents provided.
           This does not constitute a legal clearance — always verify independently with your conveyancer before exchange.
         </p>
@@ -1080,7 +1076,7 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
           </>
         ) : (
           <div className="mt-5 space-y-2">
-            <p className="text-sm font-bold text-red-600">No credits remaining</p>
+            <p className="text-sm font-medium text-gray-600">No credits remaining</p>
             <a href="/dashboard/buy-credits" className="inline-flex items-center gap-2 text-sm font-bold text-white px-6 py-2.5 rounded-xl" style={{background:'#E8001D'}}>
               💳 Buy credits to scan
             </a>
@@ -1109,7 +1105,7 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
 
   const positiveFindings = (scan.positive_findings || []).map((f:any) => ({
     severity: 'clear',
-    category: 'Nothing noted',
+    category: 'No items extracted',
     finding: typeof f === 'string' ? f : (f.finding || f.benefit || JSON.stringify(f)),
     implication: null,
   }))
@@ -1120,20 +1116,19 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
   const filtered = allItems.filter((f:any) => {
     const matchSev = filterSev === 'all' || filterSev === 'clear' || f.severity === filterSev
     const q = search.toLowerCase()
-    const matchSearch = !q || [f.finding,f.implication,f.category].some((v:any) => String(v||'').toLowerCase().includes(q))
+    const matchSearch = !q || [f.finding,f.finding,f.category].some((v:any) => String(v||'').toLowerCase().includes(q))
     return matchSev && matchSearch
   })
 
   const sevCfg: Record<string,{bg:string;text:string;strip:string;label:string;activeBg:string}> = {
-    high:   {bg:'bg-red-50',     text:'text-red-700',     strip:'#DC2626',label:'High priority',  activeBg:'#DC2626'},
-    medium: {bg:'bg-amber-50',   text:'text-amber-700',   strip:'#D97706',label:'Worth reviewing', activeBg:'#D97706'},
-    low:    {bg:'bg-blue-50',    text:'text-blue-700',    strip:'#3B82F6',label:'Good to know',    activeBg:'#3B82F6'},
+    high:   {bg:'bg-gray-50',    text:'text-gray-700',    strip:'#6B7280',label:'Category A',      activeBg:'#6B7280'},
+    medium: {bg:'bg-gray-50',    text:'text-gray-700',    strip:'#6B7280',label:'Category B',      activeBg:'#6B7280'},
+    low:    {bg:'bg-gray-50',    text:'text-gray-700',    strip:'#6B7280',label:'Category C',      activeBg:'#6B7280'},
     info:   {bg:'bg-gray-100',   text:'text-gray-600',    strip:'#9CA3AF',label:'Info',            activeBg:'#9CA3AF'},
-    clear:  {bg:'bg-emerald-50', text:'text-emerald-700', strip:'#059669',label:'Nothing noted',   activeBg:'#059669'},
+    clear:  {bg:'bg-gray-50',    text:'text-gray-700',    strip:'#6B7280',label:'No items',         activeBg:'#6B7280'},
   }
   const riskBadge = (v:string) =>
-    v==='high'?'bg-red-50 text-red-700 border-red-200':v==='medium'?'bg-amber-50 text-amber-700 border-amber-200':
-    v==='none'?'bg-emerald-50 text-emerald-700 border-emerald-200':'bg-gray-50 text-gray-500 border-gray-200'
+    'bg-gray-50 text-gray-600 border-gray-200'
 
   const tv = (v: any) => typeof v === 'string' ? v : JSON.stringify(v)
 
@@ -1156,7 +1151,7 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
           )}
           {scan.summary && scan.summary.length > 100 && (
             <button onClick={() => setSummaryExpanded(e => !e)}
-              className="text-[10px] font-semibold text-red-600 hover:underline flex-shrink-0 mt-0.5">
+              className="text-[10px] font-semibold text-gray-500 hover:underline flex-shrink-0 mt-0.5">
               {summaryExpanded ? '▲ less' : '▼ more'}
             </button>
           )}
@@ -1165,10 +1160,10 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
         {/* Stats — compact clickable filter buttons */}
         <div className="grid grid-cols-4 gap-2">
           {[
-            {sev:'high',  n:high.length,   label:'High priority',  color:'#DC2626', bg:'#FFF5F5', border:'#FCCACA'},
-            {sev:'medium',n:medium.length, label:'Worth reviewing', color:'#D97706', bg:'#FFFBF0', border:'#F5DFA0'},
+            {sev:'high',  n:high.length,   label:'Category A',     color:'#6B7280', bg:'#F9FAFB', border:'#E5E7EB'},
+            {sev:'medium',n:medium.length, label:'Category B',     color:'#6B7280', bg:'#F9FAFB', border:'#E5E7EB'},
             {sev:'low',   n:low.length+info.length, label:'Notes', color:'#6B7280', bg:'#F9FAFB', border:'#E5E7EB'},
-            {sev:'clear', n:(scan.positive_findings||[]).length, label:'Nothing noted', color:'#059669', bg:'#F0FDF4', border:'#A7F3D0'},
+            {sev:'clear', n:(scan.positive_findings||[]).length, label:'No items',       color:'#6B7280', bg:'#F9FAFB', border:'#E5E7EB'},
           ].map(({sev,n,label,color,bg,border}) => {
             const isActive = filterSev === sev
             return (
@@ -1190,7 +1185,7 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
         {filterSev !== 'all' && (
           <p className="text-xs text-gray-400">
             Showing <strong className="text-gray-600">{sevCfg[filterSev]?.label ?? filterSev}</strong> only
-            <button onClick={() => setFilterSev('all')} className="ml-2 text-red-500 hover:underline font-semibold">Clear ×</button>
+            <button onClick={() => setFilterSev('all')} className="ml-2 text-gray-400 hover:underline font-semibold">Clear ×</button>
           </p>
         )}
       </div>
@@ -1247,19 +1242,19 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
             <div className="flex items-center justify-between border-b border-gray-100 bg-white px-3">
               <div className="flex overflow-x-hidden">
                 {[
-                  {k:'all',    label:'All Findings',    count:sorted.length},
-                  {k:'high',   label:'High priority',   count:high.length},
-                  {k:'medium', label:'Worth reviewing',  count:medium.length},
-                  {k:'low',    label:'Good to know',    count:low.length+info.length},
-                  {k:'clear',  label:'Nothing noted',   count:(scan.positive_findings||[]).length},
+                  {k:'all',    label:'All Items',    count:sorted.length},
+                  {k:'high',   label:'Category A',      count:high.length},
+                  {k:'medium', label:'Category B',       count:medium.length},
+                  {k:'low',    label:'Category C',      count:low.length+info.length},
+                  {k:'clear',  label:'No items',        count:(scan.positive_findings||[]).length},
                 ].map(({k,label,count}) => (
                   <button key={k} onClick={() => setFilterSev(k)}
                     className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap -mb-px flex items-center gap-1.5 ${
                       filterSev===k
-                        ? k==='high' ? 'border-red-500 text-red-600'
-                        : k==='medium' ? 'border-amber-500 text-amber-600'
-                        : k==='low' ? 'border-blue-500 text-blue-600'
-                        : k==='clear' ? 'border-emerald-500 text-emerald-600'
+                        ? 'border-gray-500 text-gray-700'  //
+                        : k==='medium' ? 'border-amber-500 text-gray-500'
+                        : 'border-gray-500 text-gray-700'
+                        : // removed
                         : 'border-gray-900 text-gray-900'
                         : 'border-transparent text-gray-700 hover:text-gray-900'
                     }`}>
@@ -1296,7 +1291,7 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
                     })
                     .map((f:any,i:number) => (
                       <div key={i} className="flex items-start gap-3 px-5 py-3.5">
-                        <span className="text-emerald-500 font-bold text-sm mt-0.5 flex-shrink-0">✓</span>
+                        <span className="text-gray-400 text-sm mt-0.5 flex-shrink-0">·</span>
                         <p className="text-sm text-gray-700 leading-relaxed">{typeof f==='string'?f:(f.finding||f.benefit||f.item||JSON.stringify(f))}</p>
                       </div>
                     ))
@@ -1306,7 +1301,7 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
             ) : filtered.length === 0 ? (
               <div className="p-8 text-center">
                 <p className="text-sm text-gray-500">{search ? `No findings matching "${search}"` : 'No findings in this category'}</p>
-                <button onClick={() => {setFilterSev('all');setSearch('')}} className="text-xs text-red-600 hover:underline mt-1">Clear filters</button>
+                <button onClick={() => {setFilterSev('all');setSearch('')}} className="text-xs text-gray-400 hover:underline mt-1">Clear filters</button>
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
@@ -1445,7 +1440,7 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-0.5">Primary (Zoned)</p>
                       <p className="text-sm font-semibold text-gray-900">{scan.education.primary_school}</p>
                       {scan.education.primary_rating && (
-                        <p className="text-xs text-emerald-600 mt-0.5">{scan.education.primary_rating}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{scan.education.primary_rating}</p>
                       )}
                     </div>
                     {scan.education.primary_distance && (
@@ -1502,14 +1497,14 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
                     <p className="text-xs font-bold text-gray-700 mb-2">Overlays</p>
                     <div className="flex flex-wrap gap-1.5">
                       {scan.planning.overlays.map((o:any,i:number) => (
-                        <span key={i} className="text-xs bg-amber-50 border border-amber-200 text-amber-800 px-2 py-1 rounded-lg font-semibold">
-                          {o.code||o.name}{o.name&&o.code&&<span className="font-normal text-amber-600"> — {o.name}</span>}
+                        <span key={i} className="text-xs bg-gray-50 border border-gray-200 text-gray-700 px-2 py-1 rounded-lg font-semibold">
+                          {o.code||o.name}{o.name&&o.code&&<span className="font-normal text-gray-500"> — {o.name}</span>}
                         </span>
                       ))}
                     </div>
                   </div>
                 )}
-                {(scan.planning.overlays||[]).length===0 && <p className="text-sm text-emerald-600 mt-2">✓ No overlays detected</p>}
+                {(scan.planning.overlays||[]).length===0 && <p className="text-sm text-gray-500 mt-2">None detected</p>}
               </div>
             </div>
           )}
@@ -1575,12 +1570,12 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
             </div>
           )}
 
-          {/* Limitations */}
-          {(scan.limitations||[]).length>0&&(
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-              <p className="text-xs font-bold text-amber-700 mb-2">⚠️ Limitations</p>
-              {scan.limitations.map((l:any,i:number) => (
-                <p key={i} className="text-xs text-amber-700 leading-relaxed mt-1">• {typeof l==='string'?l:JSON.stringify(l)}</p>
+          {/* Additional information */}
+          {(scan.additional_information||[]).length>0&&(
+            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
+              <p className="text-xs font-bold text-gray-700 mb-2">⚠️ Additional information</p>
+              {scan.additional_information.map((l:any,i:number) => (
+                <p key={i} className="text-xs text-gray-700 leading-relaxed mt-1">• {typeof l==='string'?l:JSON.stringify(l)}</p>
               ))}
             </div>
           )}
@@ -1598,11 +1593,11 @@ function RiskFlagCard({ flag, index }: { flag: RedFlag; index: number }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="p-4">
-        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.badge}`}>{c.icon} {flag.severity.toUpperCase()} · {flag.category}</span>
+        <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">{flag.category}</span>
         <p className={`text-sm font-semibold ${c.text} mt-2 mb-2`}>{flag.issue}</p>
         <div className="flex items-start gap-2 bg-gray-50 rounded-lg px-3 py-2">
           <span className="text-xs flex-shrink-0">💡</span>
-          <p className="text-xs text-gray-700 leading-relaxed">{flag.recommendation}</p>
+          
         </div>
       </div>
     </div>
@@ -1638,7 +1633,7 @@ function UploadCta({ credits, onUpload }: { credits: number; onUpload: () => voi
           </>
         ) : (
           <div className="space-y-3">
-            <p className="text-sm font-bold text-red-600">
+            <p className="text-sm font-medium text-gray-600">
               {credits === 1 ? '1 credit remaining — you need 2 for a document review' : 'No credits — top up to continue'}
             </p>
             <a href="/dashboard/buy-credits"
