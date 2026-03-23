@@ -613,10 +613,7 @@ function ChecklistPanel({ s32, contract, onNavigate }: { s32: S32Analysis | null
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs font-black text-gray-700 uppercase tracking-wider group-hover:text-gray-900">{group.label}</p>
                 {group.count !== null && group.count !== '—' && (
-                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
-                    'bg-gray-100 text-gray-500' 
-                    ||                     group.count === 'Pending' ? 'bg-gray-100 text-gray-500' : ''
-                  }`}>
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
                     {group.count}
                   </span>
                 )}
