@@ -310,9 +310,9 @@ export default function PropertyDetailPage() {
     </div>
   )
 
-  const riskScore = property.items_detected_count
-  const riskLabel = !riskScore ? 'Not reviewed' : riskScore >= 8 ? 'Needs attention' : riskScore >= 5 ? 'Review carefully' : 'Looking good'
-  const riskColor = !riskScore ? 'text-gray-400' : riskScore >= 8 ? 'text-red-700' : riskScore >= 5 ? 'text-amber-700' : 'text-emerald-700'
+  const riskScore = property.risk_score
+  const riskLabel = !riskScore ? 'Not reviewed' : `${riskScore} item${riskScore !== 1 ? 's' : ''} detected`
+  const riskColor = !riskScore ? 'text-gray-400' : 'text-gray-700'
   const allFlags = [...(s32?.items_detected ?? []), ...(contract?.items_detected ?? [])]
   const issueCount = allFlags.filter(f => f.severity === 'high' || f.severity === 'medium').length
 
@@ -373,10 +373,10 @@ export default function PropertyDetailPage() {
                 <div className="text-right">
                   <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-0">Risk</p>
                   <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-semibold ${
-                    riskScore >= 8 ? 'bg-red-50' : riskScore >= 5 ? 'bg-amber-50' : 'bg-emerald-50'
+                    'bg-gray-50'
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full inline-block ${
-                      riskScore >= 8 ? 'bg-red-400' : riskScore >= 5 ? 'bg-amber-400' : 'bg-emerald-400'
+                      'bg-gray-400'
                     }`} />
                     <p className={`text-xs font-semibold ${riskColor}`}>{riskLabel}</p>
                   </div>
