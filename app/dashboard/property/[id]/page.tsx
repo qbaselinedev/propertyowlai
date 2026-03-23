@@ -1251,12 +1251,8 @@ function PropertyScanTab({ scan, scanning, onRunScan, onDownloadPdf, downloading
                   <button key={k} onClick={() => setFilterSev(k)}
                     className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap -mb-px flex items-center gap-1.5 ${
                       filterSev===k
-                        ? 'border-gray-500 text-gray-700'  //
-                        : k==='medium' ? 'border-amber-500 text-gray-500'
-                        : 'border-gray-500 text-gray-700'
-                        : // removed
-                        : 'border-gray-900 text-gray-900'
-                        : 'border-transparent text-gray-700 hover:text-gray-900'
+                        ? 'border-gray-700 text-gray-900'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
                     }`}>
                     {label}
                     <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
