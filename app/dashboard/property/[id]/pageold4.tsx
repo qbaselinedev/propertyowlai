@@ -34,9 +34,9 @@ interface S32Analysis {
   vendor_names?: string
   property_address?: string
   risk_score?: number
-  items_detected?: RedFlag[]
+  red_flags?: RedFlag[]
   positive_findings?: string[]
-  questions_to_explore?: string[]
+  negotiation_points?: string[]
   sections?: {
     title_and_ownership?: { status: string; lot_plan?: string; volume_folio?: string; encumbrances?: any[]; summary?: string }
     planning_and_zoning?: { status: string; zone?: string; overlays?: string[]; summary?: string }
@@ -51,9 +51,9 @@ interface S32Analysis {
 interface ContractAnalysis {
   document_type: 'contract'
   risk_score?: number
-  items_detected?: RedFlag[]
+  red_flags?: RedFlag[]
   positive_findings?: string[]
-  questions_to_explore?: string[]
+  negotiation_points?: string[]
   sections?: {
     price_and_deposit?: { status: string; purchase_price?: string; deposit_amount?: string; deposit_due?: string; deposit_holder?: string; summary?: string }
     settlement?: { status: string; settlement_date?: string; settlement_type?: string; summary?: string }
@@ -67,7 +67,7 @@ interface ContractAnalysis {
 
 const REA = '#E8001D'
 const TABS = ['Contract Scan', 'Online Scan']
-const CONTRACT_SUBTABS = ['Overview', 'S32 Review', 'Document Summary', 'Items Identified', 'Contract Brief', 'Nothing Detected']
+const CONTRACT_SUBTABS = ['Overview', 'S32 Review', 'Risk Analysis', 'Negotiation Brief', 'Contract Brief', 'Confirmed Clear']
 
 const sev = {
   high:   { bg: 'bg-red-50',   border: 'border-red-200',   text: 'text-red-700',   badge: 'bg-red-100 text-red-700',   strip: '#DC2626', icon: '🔴' },
@@ -102,6 +102,8 @@ export default function PropertyDetailPage() {
   const [activeTab, setActiveTab] = useState('Contract Scan')
   const [contractSubTab, setContractSubTab] = useState('Overview')
   const [uploading, setUploading] = useState<string | null>(null)
+  const [jobId, setJobId]         = useState<string | null>(null)
+  const [jobStage, setJobStage]   = useState<string>('')
   const [downloading, setDownloading] = useState(false)
   const [downloadingScan, setDownloadingScan] = useState(false)
   const [credits, setCredits] = useState(0)
@@ -236,38 +238,65 @@ export default function PropertyDetailPage() {
   }
 
   async function handleUpload(file: File) {
-  if (!property) return
-  setUploading('Uploading document…')
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Not logged in')
+    if (!property) return
+    setUploading('uploading')
+    setJobStage('Preparing your document…')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not logged in')
 
-    const path = `${user.id}/${property.id}/${Date.now()}_${file.name}`
-    const { error: upErr } = await supabase.storage
-      .from('property-documents')
-      .upload(path, file)
-    if (upErr) throw upErr
+      // Step 1 — upload to storage
+      const path = `${user.id}/${property.id}/${Date.now()}_${file.name}`
+      const { error: upErr } = await supabase.storage
+        .from('property-documents').upload(path, file)
+      if (upErr) throw upErr
 
-    setUploading('AI is reading your documents… this takes 60–90 seconds')
+      // Step 2 — start the job (returns immediately with jobId)
+      setUploading('starting')
+      setJobStage('Starting analysis engine…')
+      const formData = new FormData()
+      formData.append('filePath', path)
+      formData.append('propertyId', property.id)
+      const startRes  = await fetch('/api/analyze/start', { method: 'POST', body: formData })
+      const startData = await startRes.json()
+      if (!startRes.ok) throw new Error(startData.error ?? 'Failed to start')
 
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('propertyId', property.id)
+      setJobId(startData.jobId)
+      setUploading('processing')
 
-    const res = await fetch('/api/analyze', {
-      method: 'POST',
-      body: formData,
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error ?? 'Analysis failed')
-    await load()
-  } catch (e: any) {
-    alert('Upload failed: ' + e.message)
-  } finally {
-    setUploading(null)
-    if (fileInput) fileInput.value = ''
+      // Step 3 — poll for status every 3 seconds
+      await new Promise<void>((resolve, reject) => {
+        const interval = setInterval(async () => {
+          try {
+            const res  = await fetch(`/api/analyze/status?jobId=${startData.jobId}`)
+            const data = await res.json()
+            if (data.stageLabel) setJobStage(data.stageLabel)
+            if (data.done) {
+              clearInterval(interval)
+              resolve()
+            } else if (data.failed) {
+              clearInterval(interval)
+              reject(new Error(data.error || 'Analysis failed'))
+            }
+          } catch (e) {
+            // network blip — keep polling
+          }
+        }, 3000)
+      })
+
+      // Step 4 — reload results
+      setJobStage('Loading your results…')
+      await load()
+
+    } catch (e: any) {
+      alert('Upload failed: ' + e.message)
+    } finally {
+      setUploading(null)
+      setJobId(null)
+      setJobStage('')
+      if (fileInput) fileInput.value = ''
+    }
   }
-}
 
   async function handleRunScan() {
     if (!property) return
@@ -310,10 +339,10 @@ export default function PropertyDetailPage() {
     </div>
   )
 
-  const riskScore = property.items_detected_count
+  const riskScore = property.risk_score
   const riskLabel = !riskScore ? 'Not reviewed' : riskScore >= 8 ? 'Needs attention' : riskScore >= 5 ? 'Review carefully' : 'Looking good'
   const riskColor = !riskScore ? 'text-gray-400' : riskScore >= 8 ? 'text-red-700' : riskScore >= 5 ? 'text-amber-700' : 'text-emerald-700'
-  const allFlags = [...(s32?.items_detected ?? []), ...(contract?.items_detected ?? [])]
+  const allFlags = [...(s32?.red_flags ?? []), ...(contract?.red_flags ?? [])]
   const issueCount = allFlags.filter(f => f.severity === 'high' || f.severity === 'medium').length
 
   return (
@@ -352,7 +381,7 @@ export default function PropertyDetailPage() {
                   : <span className="text-[11px] bg-gray-100 text-gray-500 font-bold px-2 py-0.5 rounded-full">⏳ Contract Pending</span>}
                 {!!scan ? <span className="text-[11px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">✓ Online Scan</span>
                   : <span className="text-[11px] bg-gray-100 text-gray-500 font-bold px-2 py-0.5 rounded-full">⏳ Scan Pending</span>}
-                {issueCount > 0 && <button onClick={() => { setActiveTab('Contract Scan'); setContractSubTab('Document Summary') }} className="text-[11px] bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full hover:bg-red-200 transition-colors">{issueCount} item{issueCount !== 1 ? 's' : ''} detected</button>}
+                {issueCount > 0 && <button onClick={() => { setActiveTab('Contract Scan'); setContractSubTab('Risk Analysis') }} className="text-[11px] bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full hover:bg-red-200 transition-colors">⚠ {issueCount} item{issueCount !== 1 ? 's' : ''} to review</button>}
               </div>
             </div>
             {/* Right — meta */}
@@ -395,27 +424,40 @@ export default function PropertyDetailPage() {
         <div className="flex items-center justify-between px-3 pt-0"
              style={{background: activeTab === 'Contract Scan' ? '#FFF8F8' : '#F8FAFC',
                      borderBottom: `2px solid ${activeTab === 'Contract Scan' ? '#FECACA' : '#CBD5E1'}`}}>
-          <div className="flex gap-1 py-2">
+          <div className="flex gap-0 py-2">
             {TABS.map(tab => {
               const isActive = activeTab === tab
               const tabColor = tab === 'Contract Scan' ? '#E8001D' : '#334155'
+              const hasDone  = tab === 'Contract Scan' ? !!(s32 || contract) : !!scan
               return (
                 <button key={tab} onClick={() => setActiveTab(tab)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-bold transition-all whitespace-nowrap rounded-lg"
+                  className="relative flex items-center gap-2 px-5 py-2.5 text-sm font-bold transition-all whitespace-nowrap"
                   style={isActive ? {
                     background: tabColor,
                     color: 'white',
-                    boxShadow: `0 2px 8px ${tabColor}44`
+                    borderRadius: '8px 8px 0 0',
+                    marginBottom: '-2px',
+                    paddingBottom: '12px',
+                    boxShadow: `0 -2px 8px ${tabColor}22`
                   } : {
-                    color: '#9CA3AF',
-                    background: 'transparent'
+                    color: '#6B7280',
+                    background: '#F3F4F6',
+                    borderRadius: '8px 8px 0 0',
+                    border: '1px solid #E5E7EB',
+                    borderBottom: 'none',
+                    marginBottom: '-2px',
                   }}>
-                  <span>{tab === 'Contract Scan' ? '📄' : '🔍'}</span>
+                  <span className="text-base">{tab === 'Contract Scan' ? '📄' : '🔍'}</span>
                   <span>{tab}</span>
-                  {isActive && tab === 'Contract Scan' && (s32 || contract) && <span className="text-[10px] bg-white/30 px-1.5 py-0.5 rounded-full font-bold">✓</span>}
-                  {isActive && tab === 'Online Scan' && scan && <span className="text-[10px] bg-white/30 px-1.5 py-0.5 rounded-full font-bold">✓</span>}
-                  {!isActive && tab === 'Contract Scan' && (s32 || contract) && <span className="text-[10px] text-emerald-500 font-bold">✓</span>}
-                  {!isActive && tab === 'Online Scan' && scan && <span className="text-[10px] text-emerald-500 font-bold">✓</span>}
+                  {hasDone && (
+                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full
+                      ${isActive ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-600'}`}>✓</span>
+                  )}
+                  {!isActive && (
+                    <span className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full bg-gray-300 flex items-center justify-center">
+                      <svg width="6" height="6" viewBox="0 0 6 6"><path d="M1 2.5l2 2 2-2" stroke="#666" strokeWidth="1.2" fill="none" strokeLinecap="round"/></svg>
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -433,14 +475,16 @@ export default function PropertyDetailPage() {
                 className="flex items-center gap-1.5 text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-all disabled:opacity-50"
                 style={{background: '#E8001D'}}>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 10h10" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                {downloading ? '…' : 'Document Summary PDF'}
+                {downloading ? '…' : 'Contract Scan PDF'}
               </button>
             )}
             {activeTab === 'Contract Scan' && (
-              <button onClick={triggerUpload} disabled={!!uploading}
-                className="text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+              <button onClick={triggerUpload}
+                disabled={!!uploading || credits < 2}
+                title={credits < 2 ? `You need 2 credits to analyse. You have ${credits}.` : ''}
+                className="text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{background: '#1A1A1A'}}>
-                {uploading ? '⟳ Processing…' : (s32 || contract) ? '↑ Re-analyse' : '↑ Upload Documents'}
+                {uploading ? '⟳ Processing…' : credits < 2 ? `⚡ Need 2 credits (have ${credits})` : (s32 || contract) ? '↑ Re-analyse' : '↑ Upload Documents'}
               </button>
             )}
             {activeTab === 'Online Scan' && scan && (
@@ -485,11 +529,84 @@ export default function PropertyDetailPage() {
           </div>
         )}
 
-        {/* uploading notice */}
+        {/* Processing modal */}
         {uploading && (
-          <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex items-center gap-3">
-            <span className="text-amber-500 text-base animate-spin inline-block">⟳</span>
-            <div><p className="text-sm font-bold text-amber-800">{uploading}</p><p className="text-xs text-amber-600">Do not close this page.</p></div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:'rgba(10,10,10,0.7)', backdropFilter:'blur(6px)'}}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+
+              {/* Header with animated owl */}
+              <div className="px-6 pt-7 pb-5 text-center" style={{background:'linear-gradient(135deg,#E8001D 0%,#C0001A 100%)'}}>
+                <div style={{fontSize:'56px', lineHeight:1, display:'block', animation:'owl-bob 2s ease-in-out infinite', marginBottom:'10px'}}>🦉</div>
+                <p className="text-white font-black text-lg leading-tight tracking-tight">
+                  {uploading === 'uploading' ? 'Uploading your document' :
+                   uploading === 'starting'  ? 'Starting analysis engine' :
+                   'PropertyOwl is on the case'}
+                </p>
+                <p className="text-red-200 text-xs mt-1.5 font-medium">Please keep this page open</p>
+              </div>
+
+              {/* Live stage */}
+              <div className="px-6 py-5">
+                <div className="rounded-xl px-4 py-3 mb-4 min-h-[52px] flex items-center gap-3 border" style={{background:'#FFF5F5', borderColor:'#FECACA'}}>
+                  <div className="flex gap-1 flex-shrink-0">
+                    {[0,1,2].map(d=>(
+                      <div key={d} className="w-1.5 h-1.5 rounded-full" style={{background:'#E8001D', animation:`bounce 1s ease-in-out ${d*0.15}s infinite`}}/>
+                    ))}
+                  </div>
+                  <p className="text-sm font-semibold leading-snug" style={{color:'#C0001A'}}>
+                    {jobStage || 'Initialising…'}
+                  </p>
+                </div>
+
+                {/* Progress steps */}
+                <div className="space-y-3">
+                  {[
+                    { stage: 'uploading',   icon: '📤', label: 'Uploading to secure storage' },
+                    { stage: 'extracting',  icon: '📄', label: 'Extracting text from all pages' },
+                    { stage: 'mapping',     icon: '🗺', label: 'Classifying pages & structure' },
+                    { stage: 'analysing',   icon: '🧠', label: 'AI reviewing S32 & contract' },
+                    { stage: 'saving',      icon: '💾', label: 'Saving findings & risk score' },
+                  ].map((step, i) => {
+                    const stageOrder = ['uploading','starting','extracting','mapping','analysing','saving','done']
+                    const currentIdx = stageOrder.indexOf(uploading || '')
+                    const stepIdx    = stageOrder.indexOf(step.stage)
+                    const isDone     = stepIdx < currentIdx
+                    const isActive   = step.stage === uploading || (uploading === 'processing' && step.stage === 'extracting')
+                    return (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 transition-all duration-500
+                          ${isDone   ? 'bg-emerald-500 text-white' : ''}
+                          ${isActive ? 'bg-red-100 text-red-600'   : ''}
+                          ${!isDone && !isActive ? 'bg-gray-100 text-gray-300' : ''}
+                        `}>
+                          {isDone ? '✓' : step.icon}
+                        </div>
+                        <span className={`text-xs font-medium transition-all duration-500
+                          ${isDone   ? 'text-emerald-600' : ''}
+                          ${isActive ? 'text-gray-800'    : ''}
+                          ${!isDone && !isActive ? 'text-gray-300' : ''}
+                        `}>{step.label}</span>
+                        {isActive && (
+                          <div className="ml-auto flex gap-0.5">
+                            {[0,1,2].map(d=>(
+                              <div key={d} className="w-1 h-1 rounded-full bg-red-400"
+                                style={{animation:`bounce 1s ease-in-out ${d*0.15}s infinite`}}/>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 pb-5 pt-0">
+                <p className="text-center text-xs text-gray-400">
+                  ☕ Grab a coffee — typically <strong className="text-gray-600">60–120 seconds</strong> for a full contract
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -501,10 +618,10 @@ export default function PropertyDetailPage() {
           )}
           {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Overview'          && <OverviewTab s32={s32} contract={contract} property={property} credits={credits} onUpload={triggerUpload} onNavigate={(t: string) => setContractSubTab(t)} onDownload={handleDownloadPack} />}
           {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'S32 Review'        && <S32ReviewTab s32={s32} onUpload={triggerUpload} credits={credits} />}
-          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Document Summary'  && <RiskAnalysisTab s32={s32} contract={contract} property={property} />}
-          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Items Identified'  && <NegotiationBriefTab s32={s32} contract={contract} />}
+          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Risk Analysis'     && <RiskAnalysisTab s32={s32} contract={contract} property={property} />}
+          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Negotiation Brief' && <NegotiationBriefTab s32={s32} contract={contract} />}
           {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Contract Brief'    && <ContractTab contract={contract} credits={credits} onUpload={triggerUpload} />}
-          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Nothing Detected'  && <ConfirmedClearTab s32={s32} contract={contract} />}
+          {activeTab === 'Contract Scan' && (s32 || contract) && contractSubTab === 'Confirmed Clear'   && <ConfirmedClearTab s32={s32} contract={contract} />}
           {activeTab === 'Online Scan'   && <PropertyScanTab scan={scan} scanning={scanning} onRunScan={handleRunScan} onDownloadPdf={handleDownloadScanPdf} downloadingPdf={downloadingScan} property={property} credits={credits} />}
         </div>
       </div>
@@ -530,7 +647,7 @@ function ChecklistPanel({ s32, contract, onNavigate }: { s32: S32Analysis | null
   const mortgageStatus = !s32 ? 'pending' : mortgageEnc ? 'fail' : 'pass'
   const mortgageVal = mortgageEnc ? mortgageEnc.detail ?? mortgageEnc.reference ?? 'Undischarged' : s32 ? 'Clear' : null
 
-  const ratesOverdue = s32?.items_detected?.some(f => f.issue?.toLowerCase().includes('rates') || f.issue?.toLowerCase().includes('council'))
+  const ratesOverdue = s32?.red_flags?.some(f => f.issue?.toLowerCase().includes('rates') || f.issue?.toLowerCase().includes('council'))
   const ratesStatus = !s32 ? 'pending' : ratesOverdue ? 'fail' : o?.council_rates ? 'pass' : 'pending'
   const ratesVal = o?.council_rates ?? null
 
@@ -664,8 +781,8 @@ function ChecklistPanel({ s32, contract, onNavigate }: { s32: S32Analysis | null
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
 function OverviewTab({ s32, contract, property, credits, onUpload, onNavigate, onDownload }: any) {
-  const highFlags = s32?.items_detected?.filter((f: RedFlag) => f.severity === 'high') ?? []
-  const medFlags  = s32?.items_detected?.filter((f: RedFlag) => f.severity === 'medium') ?? []
+  const highFlags = s32?.red_flags?.filter((f: RedFlag) => f.severity === 'high') ?? []
+  const medFlags  = s32?.red_flags?.filter((f: RedFlag) => f.severity === 'medium') ?? []
   const allPositive = [...(s32?.positive_findings || []), ...(contract?.positive_findings || [])]
 
   return (
@@ -706,7 +823,7 @@ function OverviewTab({ s32, contract, property, credits, onUpload, onNavigate, o
       {/* Download pack */}
       {(s32 || contract) && (
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-sm font-bold text-gray-900 mb-1">📄 Document Summary</p>
+          <p className="text-sm font-bold text-gray-900 mb-1">📄 Conveyancer Pack</p>
           <p className="text-xs text-gray-500 mb-3">Download a structured 8-page PDF briefing to share with your conveyancer.</p>
           <button
             onClick={onDownload}
@@ -729,7 +846,7 @@ function S32ReviewTab({ s32, onUpload, credits }: { s32: S32Analysis | null; onU
   const [filter, setFilter] = useState<FilterType>('all')
   if (!s32) return <div className="space-y-4"><NoAnalysis msg="Upload your Section 32 document to see the AI review." /><UploadCta credits={credits} onUpload={onUpload} /></div>
 
-  const allFlags = s32.items_detected ?? []
+  const allFlags = s32.red_flags ?? []
   const counts = { high: allFlags.filter(f => f.severity === 'high').length, medium: allFlags.filter(f => f.severity === 'medium').length, low: allFlags.filter(f => f.severity === 'low').length }
   const filtered = filter === 'all' ? allFlags : filter === 'clear' ? [] : allFlags.filter(f => f.severity === filter)
 
@@ -818,11 +935,11 @@ function S32ReviewTab({ s32, onUpload, credits }: { s32: S32Analysis | null; onU
   )
 }
 
-// ─── Document Summary Tab ────────────────────────────────────────────────────────
+// ─── Risk Analysis Tab ────────────────────────────────────────────────────────
 
 function RiskAnalysisTab({ s32, contract, property }: { s32: S32Analysis | null; contract: ContractAnalysis | null; property: Property }) {
   const [filter, setFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all')
-  const allFlags = [...(s32?.items_detected ?? []), ...(contract?.items_detected ?? [])]
+  const allFlags = [...(s32?.red_flags ?? []), ...(contract?.red_flags ?? [])]
   const highFlags = allFlags.filter(f => f.severity === 'high')
   const medFlags  = allFlags.filter(f => f.severity === 'medium')
   const lowFlags  = allFlags.filter(f => f.severity === 'low')
@@ -870,22 +987,22 @@ function RiskAnalysisTab({ s32, contract, property }: { s32: S32Analysis | null;
         )}
 
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-          <p className="text-xs text-amber-700 leading-relaxed">⚖️ <strong>Information only.</strong> PropertyOwl AI extracts and displays document information. Not legal advice.</p>
+          <p className="text-xs text-amber-700 leading-relaxed">⚖️ <strong>Not legal advice.</strong> These are areas for further investigation. Always engage a licensed Victorian conveyancer before signing.</p>
         </div>
     </div>
   )
 }
 
-// ─── Items Identified Tab ────────────────────────────────────────────────────
+// ─── Negotiation Brief Tab ────────────────────────────────────────────────────
 
 function NegotiationBriefTab({ s32, contract }: { s32: S32Analysis | null; contract: ContractAnalysis | null }) {
-  if (!s32) return <NoAnalysis msg="Upload your Section 32 to view extracted document information." />
-  const points = [...(s32.questions_to_explore ?? []), ...(contract?.questions_to_explore ?? [])]
+  if (!s32) return <NoAnalysis msg="Upload your Section 32 to generate a negotiation brief." />
+  const points = [...(s32.negotiation_points ?? []), ...(contract?.negotiation_points ?? [])]
 
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h2 className="text-sm font-black text-gray-900 mb-1">💬 Items Identified in Document</h2>
+        <h2 className="text-sm font-black text-gray-900 mb-1">💬 Negotiation Points</h2>
         <p className="text-xs text-gray-500 mb-4">Key items you may be able to negotiate before signing.</p>
         {points.length === 0 ? (
           <p className="text-sm text-gray-400">No specific negotiation points identified.</p>
@@ -946,7 +1063,7 @@ function ContractTab({ contract, credits, onUpload }: { contract: ContractAnalys
   )
 }
 
-// ─── Nothing Detected Tab ──────────────────────────────────────────────────────
+// ─── Confirmed Clear Tab ──────────────────────────────────────────────────────
 
 function ConfirmedClearTab({ s32, contract }: { s32: S32Analysis | null; contract: ContractAnalysis | null }) {
   const allPositive = [
@@ -988,7 +1105,7 @@ function ConfirmedClearTab({ s32, contract }: { s32: S32Analysis | null; contrac
       {/* Two-column confirmed clear */}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="text-sm font-black text-gray-900">✅ Nothing Detected</h3>
+          <h3 className="text-sm font-black text-gray-900">✅ Confirmed Clear</h3>
           <p className="text-xs text-gray-600 mt-0.5">Areas reviewed with nothing of concern noted based on documents provided</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100">

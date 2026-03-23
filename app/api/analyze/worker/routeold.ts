@@ -23,7 +23,7 @@ const IMAGE_PRIORITY: Record<string, number> = {
   unknown_image:        5,
 }
 
-const DISCLAIMER = 'PropertyOwl AI extracts and displays information from uploaded property documents. This output is for informational display purposes only. It is not legal advice, financial advice, or professional property advice of any kind. Information may be incomplete or inaccurate. Always seek independent professional advice before making any property decision.'
+const DISCLAIMER = 'This is an informal AI-assisted review only and does not constitute legal advice. PropertyOwl AI is not a licensed conveyancer or solicitor. Always engage a qualified Victorian conveyancer or solicitor before signing any property contract.'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -268,13 +268,13 @@ function buildTokenBudget(
 
 const S32_SYSTEM = `You are PropertyOwl AI, a Victorian property document expert.
 
-Extract and display information from the Section 32 Vendor Statement. You are an information extraction tool — not an adviser. Display only what is present in the document.
+Review the Section 32 Vendor Statement content under Victorian law:
 Sale of Land Act 1962, Transfer of Land Act 1958, Planning and Environment Act 1987,
 Owners Corporations Act 2006, Building Act 1993, Subdivision Act 1988,
 Environmental Protection Act 2017, Water Act 1989,
 Commercial and Industrial Property Tax Reform Act 2024 (Vic).
 
-EXTRACT EXACTLY — display what is present in the document. Use only factual, neutral language:
+EXTRACT EXACTLY — never say "not provided" if data is visible anywhere:
 • Vendor full names and address
 • Lot number, Plan of Subdivision number, Volume and Folio
 • ALL title encumbrances: mortgages (bank name), covenants (reference + expiry), caveats, section 173 agreements
@@ -301,7 +301,7 @@ EXTRACT EXACTLY:
 • Purchase price (exact $)
 • Deposit: amount, due date, holder
 • Settlement date and type (fixed / on or before)
-• Special conditions: number each, summarise and copy verbatim, note if non-standard
+• Special conditions: number each, summarise and copy verbatim, flag risk level
 • Goods and chattels: included and excluded
 • Cooling off: period, whether waived (3 business days standard for residential)
 • GST: applicable, margin scheme
@@ -321,9 +321,9 @@ const S32_SCHEMA = `{
   "property_address": "",
   "lot_details": "",
   "vendor_names": "",
-  "items_detected_count": 0,
-  "document_summary": "",
-  "items_detected": [{"severity":"high|medium|low","category":"","issue":"","context":""}],
+  "risk_score": 1,
+  "risk_summary": "",
+  "red_flags": [{"severity":"high|medium|low","category":"","issue":"","recommendation":""}],
   "sections": {
     "title_and_ownership": {
       "status":"clear|issues|not_provided",
@@ -364,8 +364,8 @@ const S32_SCHEMA = `{
       "findings":[],"summary":""
     }
   },
-  "questions_to_explore":[],
-  "also_present":[],
+  "negotiation_points":[],
+  "conveyancer_questions":[],
   "positive_findings":[],
   "skipped_pages_note":"",
   "disclaimer":"${DISCLAIMER}"
@@ -374,9 +374,9 @@ const S32_SCHEMA = `{
 const CONTRACT_SCHEMA = `{
   "document_type": "contract",
   "property_address": "",
-  "items_detected_count": 0,
-  "document_summary": "",
-  "items_detected": [{"severity":"high|medium|low","category":"","issue":"","context":""}],
+  "risk_score": 1,
+  "risk_summary": "",
+  "red_flags": [{"severity":"high|medium|low","category":"","issue":"","recommendation":""}],
   "sections": {
     "price_and_deposit": {
       "status":"clear|issues|not_provided",
@@ -390,7 +390,7 @@ const CONTRACT_SCHEMA = `{
     },
     "special_conditions": {
       "status":"clear|issues|not_provided",
-      "conditions":[{"number":"","summary":"","complexity":"standard|non-standard|requires_review","verbatim":""}],
+      "conditions":[{"number":"","summary":"","risk_level":"low|medium|high","verbatim":""}],
       "findings":[],"summary":""
     },
     "goods_and_chattels": {
@@ -414,8 +414,8 @@ const CONTRACT_SCHEMA = `{
       "findings":[],"summary":""
     }
   },
-  "questions_to_explore":[],
-  "also_present":[],
+  "negotiation_points":[],
+  "conveyancer_questions":[],
   "positive_findings":[],
   "skipped_pages_note":"",
   "disclaimer":"${DISCLAIMER}"
@@ -498,8 +498,8 @@ async function call2_analyse(
 
   if (content.length === 0 || content.length === 1) {
     return pass === 's32'
-      ? { document_type: 's32', items_detected_count: 0, document_summary: 'Document content not found', items_detected: [], sections: {}, disclaimer: DISCLAIMER }
-      : { document_type: 'contract', items_detected_count: 0, document_summary: 'Document content not found', items_detected: [], sections: {}, disclaimer: DISCLAIMER }
+      ? { document_type: 's32', risk_score: 1, risk_summary: 'Document content not found', red_flags: [], sections: {}, disclaimer: DISCLAIMER }
+      : { document_type: 'contract', risk_score: 1, risk_summary: 'Document content not found', red_flags: [], sections: {}, disclaimer: DISCLAIMER }
   }
 
   const response = await client.messages.create({
@@ -541,11 +541,11 @@ async function call2_split(
   if (!r2) return r1
   return {
     ...r1,
-    items_detected_count:  (r1.items_detected_count || 0) + (r2.items_detected_count || 0),
-    document_summary:      [r1.document_summary, r2.document_summary].filter(Boolean).join(' '),
-    items_detected:        [...(r1.items_detected || []),        ...(r2.items_detected || [])],
-    questions_to_explore:  [...(r1.questions_to_explore || []),  ...(r2.questions_to_explore || [])],
-    also_present:          [...(r1.also_present || []),          ...(r2.also_present || [])],
+    risk_score:            Math.max(r1.risk_score || 0, r2.risk_score || 0),
+    risk_summary:          [r1.risk_summary, r2.risk_summary].filter(Boolean).join(' '),
+    red_flags:             [...(r1.red_flags || []),             ...(r2.red_flags || [])],
+    negotiation_points:    [...(r1.negotiation_points || []),    ...(r2.negotiation_points || [])],
+    conveyancer_questions: [...(r1.conveyancer_questions || []), ...(r2.conveyancer_questions || [])],
     positive_findings:     [...(r1.positive_findings || []),     ...(r2.positive_findings || [])],
     sections: mergeSection(r1.sections, r2.sections),
   }
@@ -587,11 +587,14 @@ function parseJson(response: Anthropic.Message, label: string): any {
 
 // ─── Risk score helper (module-level — fixes strict mode error) ───────────────
 
-// Items count — stored in risk_score DB column for backward compat
-// This is NOT a risk ranking — it is purely a count of detected items
 const computeRiskScore = (flags: any[]): number => {
-  if (!flags || flags.length === 0) return 0
-  return flags.length
+  if (!flags || flags.length === 0) return 1
+  const raw = flags.reduce((sum: number, f: any) => {
+    if (f.severity === 'high')   return sum + 3.0
+    if (f.severity === 'medium') return sum + 1.5
+    return sum + 0.5
+  }, 0)
+  return Math.min(10, Math.max(1, Math.round(raw)))
 }
 
 // ─── Worker Handler ───────────────────────────────────────────────────────────
@@ -673,19 +676,19 @@ export async function POST(request: NextRequest) {
     const analyser   = needsSplit ? call2_split : call2_analyse
 
     // Stage 5 — S32 analysis
-    await updateJob(supabase, jobId, 'analysing', 'Extracting Section 32 information…')
+    await updateJob(supabase, jobId, 'analysing', 'AI reviewing Section 32 Vendor Statement…')
     const s32Analysis = await analyser(budget, extractedText, fullResImages, pageIndex, 's32', model, maxTokens)
 
     // Stage 6 — Contract analysis
-    await updateJob(supabase, jobId, 'analysing', 'Extracting Contract of Sale information…')
+    await updateJob(supabase, jobId, 'analysing', 'AI reviewing Contract of Sale — extracting all clauses…')
     const contractAnalysis = await analyser(budget, extractedText, fullResImages, pageIndex, 'contract', model, maxTokens)
 
     // Stage 7 — Save results
-    await updateJob(supabase, jobId, 'saving', 'Organising extracted information…')
-    const s32Score      = computeRiskScore(s32Analysis.items_detected ?? [])
-    const contractScore = computeRiskScore(contractAnalysis.items_detected ?? [])
-    s32Analysis.items_detected_count = s32Score
-    contractAnalysis.items_detected_count = contractScore
+    await updateJob(supabase, jobId, 'saving', 'Building your report — risk score, flags, negotiation points…')
+    const s32Score      = computeRiskScore(s32Analysis.red_flags ?? [])
+    const contractScore = computeRiskScore(contractAnalysis.red_flags ?? [])
+    s32Analysis.risk_score      = s32Score
+    contractAnalysis.risk_score = contractScore
 
     await supabase.from('profiles').update({ credits: profile.credits - 2 }).eq('id', userId)
 
@@ -693,12 +696,12 @@ export async function POST(request: NextRequest) {
       {
         user_id: userId, property_id: propertyId, document_type: 's32',
         raw_analysis: s32Analysis, risk_score: s32Score,
-        red_flags: s32Analysis.items_detected ?? [], status: 'completed',
+        red_flags: s32Analysis.red_flags ?? [], status: 'completed',
       },
       {
         user_id: userId, property_id: propertyId, document_type: 'contract',
         raw_analysis: contractAnalysis, risk_score: contractScore,
-        red_flags: contractAnalysis.items_detected ?? [], status: 'completed',
+        red_flags: contractAnalysis.red_flags ?? [], status: 'completed',
       },
     ])
 
@@ -720,7 +723,7 @@ export async function POST(request: NextRequest) {
         text_pages: budget.textPages.length, image_pages: budget.imagePages.length,
         skipped_pages: budget.skippedPages.length, auto_split: needsSplit,
         estimated_tokens: estTokens,
-        s32_items: s32Score, contract_items: contractScore,
+        s32_risk: s32Analysis.risk_score, contract_risk: contractAnalysis.risk_score,
       },
     })
 
