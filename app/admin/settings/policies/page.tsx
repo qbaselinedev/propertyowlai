@@ -4,7 +4,15 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // All configurable permission flags with human-readable labels
-const PERMISSION_FLAGS = [
+interface PermissionFlag {
+  key: string
+  label: string
+  desc: string
+  icon: string
+  warning?: boolean
+}
+
+const PERMISSION_FLAGS: PermissionFlag[] = [
   {
     key: 'show_risk_score',
     label: 'Risk Score',
@@ -48,9 +56,9 @@ const PERMISSION_FLAGS = [
     icon: '📄',
     warning: true,
   },
-] as const
+]
 
-type PermissionKey = typeof PERMISSION_FLAGS[number]['key']
+type PermissionKey = string
 
 interface UserTypePolicy {
   label: string
