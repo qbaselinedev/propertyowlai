@@ -61,6 +61,7 @@ const PERMISSION_FLAGS: PermissionFlag[] = [
 type PermissionKey = string
 
 interface UserTypePolicy {
+  [key: string]: boolean | string
   label: string
   show_risk_score: boolean
   show_red_flags: boolean
