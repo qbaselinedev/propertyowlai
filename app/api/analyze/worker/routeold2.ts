@@ -97,52 +97,77 @@ const CALL1_SYSTEM = `You are a Victorian property document classifier.
 
 You receive thumbnail images of every page in a property document (S32 Vendor Statement and/or Contract of Sale).
 
-For each page, classify it into exactly one doc_type from this list:
-- section_32, title_search, plan_of_subdivision, council_rates, water_statement,
-  clearance_certificate, building_permits, oc_certificate, insurance,
-  planning_certificate, contract_of_sale, general_conditions, unknown_text, unknown_image
+DOCUMENT TYPES to identify:
+contract_of_sale      — Contract pages: particulars, general conditions, special conditions, guarantee
+section_32            — S32 vendor statement: outgoings, title, planning, GAIC, services
+title_search          — LANDATA Register Search Statement listing encumbrances as readable text
+landata_cover         — "Imaged Document Cover Sheet" — a text cover page before scanned LANDATA images
+plan_of_subdivision   — Lot diagrams showing easement locations graphically (PS numbers)
+council_rates         — Rate notice: property value, council rates, levies (vector image, sparse text)
+water_statement       — Water authority information statement (South East Water, Melbourne Water etc)
+clearance_certificate — SRO Property Clearance Certificate (land tax, windfall gains tax)
+building_permits      — Building permit register, Form 2, Form 16 from building surveyor
+oc_certificate        — Owners Corporation certificate: annual fees, special levies
+insurance             — Domestic building warranty insurance certificate
+planning_certificate  — Planning certificate: zone, overlays
+due_diligence         — Consumer Affairs Victoria due diligence checklist (standard government doc)
+unknown_image         — Image page that cannot be classified
 
-And specify send_as: "text" | "full_image" | "skip"
-- text: page contains readable text that can be extracted
-- full_image: page is a diagram, map, plan, table of figures, or handwritten — needs visual analysis
-- skip: page is blank, cover sheet, or purely decorative
+SEND_AS RULES:
+"text"       — Page has extractable text (pdfplumber can read it). Includes: contract, s32, title_search (if text visible), water, clearance, building permits, insurance, planning cert, due diligence
+"full_image" — Page is graphical/scanned OR has figures only visible as image. Includes: plan_of_subdivision (ALWAYS), council_rates (usually), any unknown image pages
+"skip"       — Duplicates, blank pages, landata_cover pages themselves, pages already captured
 
-Return ONLY a JSON array, no markdown. Example:
-[{"page":1,"doc_type":"section_32","send_as":"text","readable":true,"notes":null}]`
+CRITICAL:
+1. plan_of_subdivision → ALWAYS "full_image" (easement diagrams can't be captured as text)
+2. landata_cover page itself → "skip" (but the pages after it are plan_of_subdivision or title instrument)
+3. If the same document appears twice → skip the second copy
+4. General conditions pages (GC1-33) → "text" but mark doc_type as "contract_of_sale"
+5. title_search → "text" if LANDATA text header + encumbrance list are visible, otherwise "full_image"`
 
 async function call1_mapDocument(
   thumbnails: string[],
-  totalPages: number,
+  pageCount: number,
   model: string
 ): Promise<PageIndex[]> {
-  if (thumbnails.length === 0) return fallbackClassification(totalPages)
 
-  const BATCH_SIZE = 20
+  const BATCH_SIZE = 80 // stay well under Claude's 100 image limit
   const allResults: PageIndex[] = []
 
-  for (let i = 0; i < thumbnails.length; i += BATCH_SIZE) {
-    const batch      = thumbnails.slice(i, i + BATCH_SIZE)
-    const pageOffset = i + 1
-    const pageEnd    = Math.min(i + BATCH_SIZE, totalPages)
+  // Split thumbnails into batches if > 80 pages
+  for (let batchStart = 0; batchStart < thumbnails.length; batchStart += BATCH_SIZE) {
+    const batchThumbs  = thumbnails.slice(batchStart, batchStart + BATCH_SIZE)
+    const batchPages   = batchThumbs.length
+    const pageOffset   = batchStart + 1  // page numbers in this batch start at this
+    const pageEnd      = batchStart + batchPages
 
-    const content: Anthropic.ContentBlockParam[] = [
-      { type: 'text', text: `Classify pages ${pageOffset}–${pageEnd} of ${totalPages}:` },
-      ...batch.map((b64, idx): Anthropic.ContentBlockParam => ({
-        type:   'image',
-        source: { type: 'base64', media_type: 'image/jpeg', data: b64 },
-      })),
-      { type: 'text', text: `Return JSON array for pages ${pageOffset}–${pageEnd}.` },
-    ]
+    console.log(`[PropertyOwl] Call 1 batch pages ${pageOffset}–${pageEnd}`)
+
+    const imageBlocks: Anthropic.ImageBlockParam[] = batchThumbs
+      .map((b64) => b64 ? {
+        type: 'image' as const,
+        source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: b64 },
+      } : null)
+      .filter(Boolean) as Anthropic.ImageBlockParam[]
 
     const response = await client.messages.create({
       model,
-      max_tokens: CALL1_OVERHEAD,
-      system:     CALL1_SYSTEM,
-      messages:   [{ role: 'user', content }],
+      max_tokens: 4096,
+      system: CALL1_SYSTEM,
+      messages: [{
+        role: 'user',
+        content: [
+          ...imageBlocks,
+          {
+            type: 'text',
+            text: `Above are pages ${pageOffset} to ${pageEnd} (${batchPages} thumbnails) of a ${pageCount}-page Victorian property document.\n\nReturn ONLY a valid JSON array (no markdown, no preamble) with exactly ${batchPages} objects:\n[\n  {"page":${pageOffset},"doc_type":"contract_of_sale","send_as":"text","readable":true,"notes":null}\n]\n\nPage numbers must start at ${pageOffset} and end at ${pageEnd}.`,
+          },
+        ],
+      }],
     })
 
     const raw     = response.content[0].type === 'text' ? response.content[0].text : '[]'
-    const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    const cleaned = raw.replace(/\`\`\`json\n?/g, '').replace(/\`\`\`\n?/g, '').trim()
 
     try {
       const batch = JSON.parse(cleaned) as PageIndex[]
@@ -272,76 +297,58 @@ const CONTRACT_SYSTEM = `You are PropertyOwl AI, a Victorian property document e
 Review the Contract of Sale content under Victorian law:
 Sale of Land Act 1962, Estate Agents Act 1980, Goods Act 1958, GST legislation.
 
-EXTRACT EXACTLY — display what is present in the document. Use only factual, neutral language:
-• Purchase price, deposit amount and due date, deposit holder
-• Settlement date and type
-• All special conditions — number, summary, exact wording
-• Goods and chattels included and excluded
-• Cooling off period and whether waived
-• GST status and margin scheme
+EXTRACT EXACTLY:
+• Purchase price (exact $)
+• Deposit: amount, due date, holder
+• Settlement date and type (fixed / on or before)
+• Special conditions: number each, summarise and copy verbatim, note if non-standard
+• Goods and chattels: included and excluded
+• Cooling off: period, whether waived (3 business days standard for residential)
+• GST: applicable, margin scheme
 • Penalty interest rate
+• Agent name and agency
+• Re-settlement fee
+• Any foreign investment / FIRB conditions
+• Any sunset clauses
 
 <STANDARD_VIC_GENERAL_CONDITIONS/>
-When you see this tag, it means standard Victorian Contract General Conditions GC1-33 were present. These are standardised — do not flag them.
+Standard Victorian Contract General Conditions GC1-33 were present. Legally standardised — do not flag.
 
 ${DISCLAIMER}`
-
-// ─── Policy-aware prompt suffix ───────────────────────────────────────────────
-// Appended to S32_SYSTEM or CONTRACT_SYSTEM based on the user's type policy.
-// For facts_only users: instructs strict neutral extraction only.
-// For licensed professionals: unlocks full analytical capability.
-
-const FACTS_ONLY_SUFFIX = `
-
-INFORMATION-ONLY MODE: This report is for informational purposes only. You MUST:
-- Present document information factually and neutrally, exactly as it appears in the document
-- DO NOT highlight risks, flag issues, assign severity, or suggest there are problems
-- DO NOT make recommendations or suggest any actions
-- DO NOT use language that implies urgency, concern or risk
-- DO NOT include risk scores, risk summaries, or flag counts
-- Simply describe what is present in the document in a clear, factual manner
-- If a field is not present in the document, state "Not provided"
-- Your role is to extract and present information, not to interpret or advise`
-
-function buildPolicyPromptSuffix(policy: Record<string, boolean> | null): string {
-  if (!policy || policy.facts_only_mode) return FACTS_ONLY_SUFFIX
-
-  const caps: string[] = []
-  if (policy.show_red_flags)           caps.push('identify and clearly flag risks, issues and red flags with severity levels (high/medium/low)')
-  if (policy.show_risk_score)          caps.push('provide a risk score from 1–10 based on the severity and volume of issues found')
-  if (policy.show_risk_summary)        caps.push('write a concise risk summary narrative that highlights the most important concerns')
-  if (policy.show_issues)              caps.push('document all identified problems, anomalies, unusual clauses, missing disclosures and discrepancies')
-  if (policy.show_llm_recommendations) caps.push('provide professional recommendations for each issue found, including what the conveyancer or lawyer should advise their client')
-  if (policy.show_suggested_actions)   caps.push('suggest specific next steps and actions (e.g. request further disclosure, negotiate clause removal, seek specialist advice)')
-
-  if (caps.length === 0) return FACTS_ONLY_SUFFIX
-
-  return `
-
-PROFESSIONAL ACCESS MODE: This report is being generated for a licensed professional with authority to advise clients on property matters. You are authorised to use your full analytical capability. You MUST:
-${caps.map(c => `- ${c}`).join('\n')}
-
-Apply Victorian property law expertise throughout. Reference specific clauses, legislation and standard conveyancing practice where relevant.`
-}
-
-// ─── JSON schemas ─────────────────────────────────────────────────────────────
 
 const S32_SCHEMA = `{
   "document_type": "s32",
   "property_address": "",
+  "lot_details": "",
+  "vendor_names": "",
   "items_detected_count": 0,
   "document_summary": "",
   "items_detected": [{"severity":"high|medium|low","category":"","issue":"","context":""}],
   "sections": {
-    "title": {
+    "title_and_ownership": {
       "status":"clear|issues|not_provided",
-      "volume":"","folio":"","lot":"","plan":"",
-      "encumbrances":[{"type":"","detail":"","registered":""}],
+      "ct_number":"","lot_plan":"","volume_folio":"","registered_proprietors":"",
+      "encumbrances":[{"type":"mortgage|covenant|caveat|agreement|easement","reference":"","detail":"","expiry":""}],
+      "findings":[],"summary":""
+    },
+    "planning_and_zoning": {
+      "status":"clear|issues|not_provided",
+      "zone":"","overlays":[],"gaic_applicable":false,"gaic_amount":"",
+      "findings":[],"summary":""
+    },
+    "easements_and_covenants": {
+      "status":"clear|issues|not_provided",
+      "items":[{"type":"","reference":"","description":"","expiry":"","diagram_page":null}],
+      "findings":[],"summary":""
+    },
+    "building_permits": {
+      "status":"clear|issues|not_provided",
+      "permits":[{"number":"","date":"","description":"","value":"","surveyor":""}],
       "findings":[],"summary":""
     },
     "owners_corporation": {
-      "status":"clear|issues|not_provided",
-      "applicable":false,"oc_number":"","annual_fee":"","special_levies":"","lot_liability":"","lot_entitlement":"",
+      "applicable":false,"status":"clear|issues|not_applicable",
+      "oc_number":"","annual_fee":"","special_levies":"","lot_liability":"","lot_entitlement":"",
       "findings":[],"summary":""
     },
     "outgoings": {
@@ -414,8 +421,6 @@ const CONTRACT_SCHEMA = `{
   "disclaimer":"${DISCLAIMER}"
 }`
 
-// ─── call2_analyse — policy-aware ────────────────────────────────────────────
-
 async function call2_analyse(
   budget: TokenBudget,
   extractedText: Record<number, string>,
@@ -423,15 +428,12 @@ async function call2_analyse(
   pageIndex: PageIndex[],
   pass: 's32' | 'contract',
   model: string,
-  maxTokens: number,
-  policy: Record<string, boolean> | null   // ← policy added
+  maxTokens: number
 ): Promise<any> {
 
-  // Append policy suffix to base system prompt
-  const baseSystem = pass === 's32' ? S32_SYSTEM : CONTRACT_SYSTEM
-  const system     = baseSystem + buildPolicyPromptSuffix(policy)
-  const schema     = pass === 's32' ? S32_SCHEMA : CONTRACT_SCHEMA
-  const label      = pass === 's32' ? 'Section 32 Vendor Statement' : 'Contract of Sale'
+  const system = pass === 's32' ? S32_SYSTEM : CONTRACT_SYSTEM
+  const schema = pass === 's32' ? S32_SCHEMA : CONTRACT_SCHEMA
+  const label  = pass === 's32' ? 'Section 32 Vendor Statement' : 'Contract of Sale'
 
   const relevant = pass === 's32'
     ? new Set(['section_32','title_search','plan_of_subdivision','council_rates',
@@ -519,8 +521,7 @@ async function call2_split(
   pageIndex: PageIndex[],
   pass: 's32' | 'contract',
   model: string,
-  maxTokens: number,
-  policy: Record<string, boolean> | null   // ← policy added
+  maxTokens: number
 ): Promise<any> {
   const half    = Math.ceil(budget.textPages.length / 2)
   const imgHalf = Math.ceil(budget.imagePages.length / 2)
@@ -528,11 +529,11 @@ async function call2_split(
   const [r1, r2] = await Promise.all([
     call2_analyse(
       { ...budget, textPages: budget.textPages.slice(0, half), imagePages: budget.imagePages.slice(0, imgHalf) },
-      extractedText, fullResImages, pageIndex, pass, model, maxTokens, policy
+      extractedText, fullResImages, pageIndex, pass, model, maxTokens
     ),
     call2_analyse(
       { ...budget, textPages: budget.textPages.slice(half), imagePages: budget.imagePages.slice(imgHalf) },
-      extractedText, fullResImages, pageIndex, pass, model, maxTokens, policy
+      extractedText, fullResImages, pageIndex, pass, model, maxTokens
     ),
   ])
 
@@ -584,7 +585,7 @@ function parseJson(response: Anthropic.Message, label: string): any {
   }
 }
 
-// ─── Risk score helper ────────────────────────────────────────────────────────
+// ─── Risk score helper (module-level — fixes strict mode error) ───────────────
 
 // Items count — stored in risk_score DB column for backward compat
 // This is NOT a risk ranking — it is purely a count of detected items
@@ -628,12 +629,9 @@ export async function POST(request: NextRequest) {
 
     const { user_id: userId, property_id: propertyId, file_path: filePath } = job
 
-    // Load profile — now includes user_type and conveyancer verification status
+    // Load profile for credits
     const { data: profile } = await supabase
-      .from('profiles')
-      .select('credits, user_type, conveyancer_verified, conveyancer_pending_approval')
-      .eq('id', userId)
-      .single()
+      .from('profiles').select('credits').eq('id', userId).single()
 
     if (!profile || profile.credits < 2) {
       await supabase.from('analysis_jobs')
@@ -642,33 +640,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Insufficient credits' }, { status: 402 })
     }
 
-    // Load LLM config
     const { data: llmConfig } = await supabase.from('app_settings').select('value').eq('key', 'llm_config').single()
     const config    = (llmConfig?.value as any) || {}
     const model     = config.model      || 'claude-haiku-4-5-20251001'
     const maxTokens = config.max_tokens || 8000
-
-    // ── Load user type policy ──────────────────────────────────────────────────
-    // Determines which analytical capabilities the LLM uses for this user
-    const { data: policySetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'user_type_policies')
-      .single()
-
-    const allPolicies = (policySetting?.value as Record<string, Record<string, boolean>>) || {}
-    const userType    = profile.user_type || 'buyer'
-
-    // Conveyancers who haven't been verified yet get facts-only mode
-    // until an admin approves them via the admin/users page
-    let effectiveUserType = userType
-    if (userType === 'conveyancer' && !profile.conveyancer_verified) {
-      effectiveUserType = 'buyer'
-      console.log(`[PropertyOwl Worker] Conveyancer ${userId} not yet verified — using facts-only mode`)
-    }
-
-    const userPolicy = allPolicies[effectiveUserType] || allPolicies['buyer'] || null
-    console.log(`[PropertyOwl Worker] User type: ${userType}, effective: ${effectiveUserType}, facts_only: ${userPolicy?.facts_only_mode ?? true}`)
 
     // Stage 1 — download PDF
     await updateJob(supabase, jobId, 'extracting', 'Downloading your document…')
@@ -697,26 +672,20 @@ export async function POST(request: NextRequest) {
     const needsSplit = estTokens > SAFE_TOKEN_LIMIT
     const analyser   = needsSplit ? call2_split : call2_analyse
 
-    // Stage 5 — S32 analysis (policy-aware)
+    // Stage 5 — S32 analysis
     await updateJob(supabase, jobId, 'analysing', 'Extracting Section 32 information…')
-    const s32Analysis = await analyser(budget, extractedText, fullResImages, pageIndex, 's32', model, maxTokens, userPolicy)
+    const s32Analysis = await analyser(budget, extractedText, fullResImages, pageIndex, 's32', model, maxTokens)
 
-    // Stage 6 — Contract analysis (policy-aware)
+    // Stage 6 — Contract analysis
     await updateJob(supabase, jobId, 'analysing', 'Extracting Contract of Sale information…')
-    const contractAnalysis = await analyser(budget, extractedText, fullResImages, pageIndex, 'contract', model, maxTokens, userPolicy)
+    const contractAnalysis = await analyser(budget, extractedText, fullResImages, pageIndex, 'contract', model, maxTokens)
 
     // Stage 7 — Save results
     await updateJob(supabase, jobId, 'saving', 'Organising extracted information…')
     const s32Score      = computeRiskScore(s32Analysis.items_detected ?? [])
     const contractScore = computeRiskScore(contractAnalysis.items_detected ?? [])
-    s32Analysis.items_detected_count      = s32Score
+    s32Analysis.items_detected_count = s32Score
     contractAnalysis.items_detected_count = contractScore
-
-    // Store user type in results for audit trail
-    s32Analysis.generated_for_user_type      = userType
-    s32Analysis.effective_user_type          = effectiveUserType
-    contractAnalysis.generated_for_user_type = userType
-    contractAnalysis.effective_user_type     = effectiveUserType
 
     await supabase.from('profiles').update({ credits: profile.credits - 2 }).eq('id', userId)
 
@@ -752,7 +721,6 @@ export async function POST(request: NextRequest) {
         skipped_pages: budget.skippedPages.length, auto_split: needsSplit,
         estimated_tokens: estTokens,
         s32_items: s32Score, contract_items: contractScore,
-        user_type: userType, effective_user_type: effectiveUserType,
       },
     })
 
@@ -769,7 +737,7 @@ export async function POST(request: NextRequest) {
       const { createClient: sc } = await import('@supabase/supabase-js')
       const supa = sc(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
       await supa.from('analysis_jobs')
-        .update({ status: 'error', error: err.message || 'Unknown error', updated_at: new Date().toISOString() })
+        .update({ status: 'error', error: err.message, updated_at: new Date().toISOString() })
         .eq('id', jobId)
     }
     return NextResponse.json({ error: err.message || 'Worker failed' }, { status: 500 })

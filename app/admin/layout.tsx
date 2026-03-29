@@ -11,6 +11,7 @@ const NAV = [
   ]},
   { section: 'Settings', items: [
     { href: '/admin/settings/llm', icon: '🤖', label: 'LLM & AI' },
+    { href: '/admin/settings/policies', icon: '🛡️', label: 'User Policies' },
     { href: '/admin/settings/pricing', icon: '💳', label: 'Pricing' },
     { href: '/admin/settings/content', icon: '✏️', label: 'Content & System' },
   ]},
@@ -52,23 +53,31 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-52 bg-gray-900 border-r border-gray-800 flex-shrink-0 overflow-y-auto py-4">
-          <nav className="px-3 space-y-4">
+        <aside className="w-52 bg-gray-900 border-r border-gray-800 flex-shrink-0 overflow-y-auto">
+          <nav className="p-4 space-y-6">
             {NAV.map(({ section, items }) => (
               <div key={section}>
-                <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest px-2 mb-1.5">{section}</p>
-                {items.map((item) => (
-                  <Link key={item.href} href={item.href}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
-                    <span className="text-base w-4 text-center">{item.icon}</span>
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
+                <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-2 px-2">
+                  {section}
+                </p>
+                <div className="space-y-0.5">
+                  {items.map(({ href, icon, label }) => (
+                    <Link
+                      key={href}
+                      href={href}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+                    >
+                      <span className="text-base">{icon}</span>
+                      <span className="font-medium">{label}</span>
+                    </Link>
+                  ))}
+                </div>
               </div>
             ))}
           </nav>
         </aside>
 
+        {/* Main */}
         <main className="flex-1 overflow-y-auto p-8">
           {children}
         </main>
