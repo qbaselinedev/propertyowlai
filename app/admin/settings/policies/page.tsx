@@ -97,6 +97,7 @@ export default function PoliciesPage() {
   const [policies, setPolicies] = useState<PoliciesMap | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -105,8 +106,9 @@ export default function PoliciesPage() {
       .select('value')
       .eq('key', 'user_type_policies')
       .single()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (data?.value) setPolicies(data.value as PoliciesMap)
+        else if (error) console.error('Load error:', error.message)
         setLoading(false)
       })
   }, [])
@@ -158,12 +160,25 @@ export default function PoliciesPage() {
   async function handleSave() {
     if (!policies) return
     setSaving(true)
-    await supabase
+    setSaveError(null)
+    const { error } = await supabase
       .from('app_settings')
-      .upsert({ key: 'user_type_policies', value: policies })
+      .upsert(
+        { key: 'user_type_policies', value: policies, updated_at: new Date().toISOString() },
+        { onConflict: 'key' }
+      )
     setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+    if (error) {
+      console.error('Save error:', error)
+      setSaveError(
+        error.code === '42501'
+          ? 'Permission denied — run the admin write RLS policy SQL fix in Supabase.'
+          : `Save failed: ${error.message}`
+      )
+    } else {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    }
   }
 
   if (loading) {
@@ -342,6 +357,21 @@ export default function PoliciesPage() {
           These settings take effect on the next analysis run — existing reports are not retroactively changed.
         </p>
       </div>
+
+      {saveError && (
+        <div className="mb-4 p-4 bg-red-500/10 border border-red-500/40 rounded-xl">
+          <p className="text-xs font-bold text-red-400 mb-1">⚠️ Save failed</p>
+          <p className="text-xs text-red-300">{saveError}</p>
+          {saveError.includes('Permission denied') && (
+            <p className="text-xs text-red-300 mt-2 font-mono bg-red-900/30 p-2 rounded">
+              Run in Supabase SQL editor:<br />
+              DROP POLICY IF EXISTS "Admins can write settings" ON public.app_settings;<br />
+              CREATE POLICY "Admins can write settings" ON public.app_settings<br />
+              FOR ALL USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin'));
+            </p>
+          )}
+        </div>
+      )}
 
       <button
         onClick={handleSave}
