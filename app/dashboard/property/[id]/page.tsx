@@ -574,7 +574,6 @@ export default function PropertyDetailPage() {
         )}
 
         {/* uploading notice */}
-        // REPLACE WITH:
         {/* Full-screen processing modal */}
         {uploading && (
           <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:'rgba(10,10,10,0.75)', backdropFilter:'blur(6px)'}}>
