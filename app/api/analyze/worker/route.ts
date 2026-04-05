@@ -600,17 +600,68 @@ function estimateCall2Tokens(budget: TokenBudget, extractedText: Record<number, 
 }
 
 function parseJson(response: Anthropic.Message, label: string): any {
-  const raw     = response.content[0].type === 'text' ? response.content[0].text : ''
-  const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-  try {
-    return JSON.parse(cleaned)
-  } catch {
-    const last = cleaned.lastIndexOf('\n}')
-    if (last > 0) {
-      try { return JSON.parse(cleaned.substring(0, last + 2)) } catch {}
-    }
-    throw new Error(`Malformed JSON response for ${label}`)
+  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+
+  // Log stop reason — if max_tokens was hit, JSON will be truncated
+  const stopReason = (response as any).stop_reason
+  if (stopReason === 'max_tokens') {
+    console.warn(`[PropertyOwl] ${label}: hit max_tokens — JSON may be truncated. Increase max_tokens in Admin → LLM Settings.`)
   }
+
+  // Strip markdown fences
+  const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+
+  // Attempt 1 — clean parse
+  try { return JSON.parse(cleaned) } catch {}
+
+  // Attempt 2 — find last complete top-level closing brace
+  const last = cleaned.lastIndexOf('\n}')
+  if (last > 0) {
+    try { return JSON.parse(cleaned.substring(0, last + 2)) } catch {}
+  }
+
+  // Attempt 3 — truncated mid-string: close all open structures
+  // Count open braces/brackets and close them
+  try {
+    let depth = 0
+    let inStr = false
+    let escaped = false
+    const chars: string[] = []
+    for (const ch of cleaned) {
+      if (escaped) { escaped = false; chars.push(ch); continue }
+      if (ch === '\\' && inStr) { escaped = true; chars.push(ch); continue }
+      if (ch === '"') inStr = !inStr
+      if (!inStr) {
+        if (ch === '{' || ch === '[') depth++
+        if (ch === '}' || ch === ']') depth--
+      }
+      chars.push(ch)
+    }
+    // Close any unterminated string
+    let partial = chars.join('')
+    if (inStr) partial += '"'
+    // Close any open objects/arrays from innermost to outermost
+    // We need to figure out the nesting stack — simpler: just append closing chars
+    const stack: string[] = []
+    let inS = false
+    let esc = false
+    for (const ch of partial) {
+      if (esc) { esc = false; continue }
+      if (ch === '\\' && inS) { esc = true; continue }
+      if (ch === '"') { inS = !inS; continue }
+      if (!inS) {
+        if (ch === '{') stack.push('}')
+        else if (ch === '[') stack.push(']')
+        else if (ch === '}' || ch === ']') stack.pop()
+      }
+    }
+    const closed = partial + stack.reverse().join('')
+    try { return JSON.parse(closed) } catch {}
+  } catch {}
+
+  // Attempt 4 — extract whatever partial data we can, return safe default
+  console.error(`[PropertyOwl] ${label}: all JSON parse attempts failed. Raw length: ${raw.length}. Stop reason: ${stopReason}`)
+  throw new Error(`Malformed JSON response for ${label} — try increasing Max Tokens in Admin → LLM Settings`)
 }
 
 // ─── Risk score helper ────────────────────────────────────────────────────────
@@ -675,7 +726,12 @@ export async function POST(request: NextRequest) {
     const { data: llmConfig } = await supabase.from('app_settings').select('value').eq('key', 'llm_config').single()
     const config    = (llmConfig?.value as any) || {}
     const model     = config.model      || 'claude-haiku-4-5-20251001'
-    const maxTokens = config.max_tokens || 8000
+    // Professional mode needs more tokens for recommendations + email draft
+    // Minimum 16000 for professional, 8000 for facts-only
+    const PROFESSIONAL_TYPES_CHECK = ['conveyancer', 'lawyer']
+    const isProfessionalRun = PROFESSIONAL_TYPES_CHECK.includes(effectiveUserType)
+    const defaultTokens = isProfessionalRun ? 16000 : 8000
+    const maxTokens = config.max_tokens ? Math.max(config.max_tokens, isProfessionalRun ? 16000 : 4000) : defaultTokens
 
     // ── Load user type policy ──────────────────────────────────────────────────
     // Determines which analytical capabilities the LLM uses for this user
