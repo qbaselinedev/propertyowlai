@@ -183,7 +183,8 @@ export default function AdminUsersPage() {
 
   // ── Filtering ─────────────────────────────────────────────────────────────
 
-  const pending  = users.filter(u => u.conveyancer_pending_approval && !u.conveyancer_verified)
+  // Show ALL unverified professionals — whether pending flag is set or not
+  const pending  = users.filter(u => PROFESSIONAL_TYPES.includes(u.user_type ?? '') && !u.conveyancer_verified)
   const filtered = users.filter(u => {
     const q = search.toLowerCase()
     const matchSearch = !q || (u.email ?? '').toLowerCase().includes(q) || (u.full_name ?? '').toLowerCase().includes(q)
@@ -387,7 +388,7 @@ export default function AdminUsersPage() {
                     const typeMeta   = USER_TYPE_META[user.user_type ?? 'buyer'] ?? USER_TYPE_META['buyer']
                     const isEditing  = editingId === user.id
                     const isGranting = grantingId === user.id
-                    const isPending  = user.conveyancer_pending_approval && !user.conveyancer_verified
+                    const isPending  = PROFESSIONAL_TYPES.includes(user.user_type ?? '') && !user.conveyancer_verified
                     const isPro      = PROFESSIONAL_TYPES.includes(user.user_type ?? '')
 
                     return (
