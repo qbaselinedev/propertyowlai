@@ -499,14 +499,14 @@ export default function ProfessionalReportView({
           {/* S32 sections */}
           {s32?.sections && Object.entries(s32.sections).map(([key, section]: [string, any]) => {
             if (!section) return null
-            const statusColor = {
+            const statusColor = ({
               clear: 'border-l-emerald-500 bg-emerald-50',
               issues: 'border-l-red-500 bg-red-50',
               issues_found: 'border-l-red-500 bg-red-50',
               not_provided: 'border-l-gray-300 bg-gray-50',
               not_applicable: 'border-l-gray-300 bg-gray-50',
               incomplete: 'border-l-amber-400 bg-amber-50',
-            }[section.status] ?? 'border-l-gray-300 bg-gray-50'
+            } as Record<string, string>)[section.status]?? 'border-l-gray-300 bg-gray-50'
 
             const sectionLabel: Record<string, string> = {
               title_and_ownership: '📋 Title & Ownership',
@@ -554,13 +554,13 @@ export default function ProfessionalReportView({
           {/* Contract sections */}
           {contract?.sections && Object.entries(contract.sections).map(([key, section]: [string, any]) => {
             if (!section) return null
-            const statusColor = {
+            const statusColor = ({
               clear: 'border-l-emerald-500 bg-emerald-50',
               issues: 'border-l-red-500 bg-red-50',
               not_provided: 'border-l-gray-300 bg-gray-50',
               not_applicable: 'border-l-gray-300 bg-gray-50',
               incomplete: 'border-l-amber-400 bg-amber-50',
-            }[section.status] ?? 'border-l-gray-300 bg-gray-50'
+            } as Record<string, string>)[section.status] ?? 'border-l-gray-300 bg-gray-50'
 
             const sectionLabel: Record<string, string> = {
               price_and_deposit: '💵 Price & Deposit',
