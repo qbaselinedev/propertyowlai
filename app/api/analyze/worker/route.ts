@@ -726,13 +726,6 @@ export async function POST(request: NextRequest) {
     const { data: llmConfig } = await supabase.from('app_settings').select('value').eq('key', 'llm_config').single()
     const config    = (llmConfig?.value as any) || {}
     const model     = config.model      || 'claude-haiku-4-5-20251001'
-    // Professional mode needs more tokens for recommendations + email draft
-    // Minimum 16000 for professional, 8000 for facts-only
-    const PROFESSIONAL_TYPES_CHECK = ['conveyancer', 'lawyer']
-    const isProfessionalRun = PROFESSIONAL_TYPES_CHECK.includes(effectiveUserType)
-    const defaultTokens = isProfessionalRun ? 16000 : 8000
-    const maxTokens = config.max_tokens ? Math.max(config.max_tokens, isProfessionalRun ? 16000 : 4000) : defaultTokens
-
     // ── Load user type policy ──────────────────────────────────────────────────
     // Determines which analytical capabilities the LLM uses for this user
     const { data: policySetting } = await supabase
@@ -750,6 +743,13 @@ export async function POST(request: NextRequest) {
     if (userType === 'conveyancer' && !profile.conveyancer_verified) {
       effectiveUserType = 'buyer'
       console.log(`[PropertyOwl Worker] Conveyancer ${userId} not yet verified — using facts-only mode`)
+
+    // Professional mode needs more tokens for recommendations + email draft.
+    // Always floor at 16000 for conveyancer/lawyer regardless of admin setting.
+    const isProfessionalRun = ['conveyancer', 'lawyer'].includes(effectiveUserType)
+    const maxTokens = config.max_tokens
+      ? Math.max(config.max_tokens, isProfessionalRun ? 16000 : 4000)
+      : isProfessionalRun ? 16000 : 8000
     }
 
     // If no policies saved in DB yet, apply sensible defaults:
