@@ -101,7 +101,12 @@ export default function PropertyDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('Document Information')
   const [contractSubTab, setContractSubTab] = useState('Overview')
+  //const [uploading, setUploading] = useState<string | null>(null)
+  //const [downloading, setDownloading] = useState(false)
+  // REPLACE WITH:
   const [uploading, setUploading] = useState<string | null>(null)
+  const [jobId, setJobId]         = useState<string | null>(null)
+  const [jobStage, setJobStage]   = useState<string>('')
   const [downloading, setDownloading] = useState(false)
   const [downloadingScan, setDownloadingScan] = useState(false)
   const [credits, setCredits] = useState(0)
@@ -234,7 +239,7 @@ export default function PropertyDetailPage() {
     }
     fileInput.click()
   }
-
+/*
   async function handleUpload(file: File) {
   if (!property) return
   setUploading('Uploading document…')
@@ -268,6 +273,81 @@ export default function PropertyDetailPage() {
     if (fileInput) fileInput.value = ''
   }
 }
+*/
+
+// ── CHANGE 2: Replace entire handleUpload function ────────────
+// FIND: async function handleUpload(file: File) { ... }
+// REPLACE WITH:
+
+  async function handleUpload(file: File) {
+    if (!property) return
+
+    // Guard: must have at least 2 credits before doing anything
+    if (credits < 2) {
+      alert(`You need 2 credits to run an analysis. You currently have ${credits} credit${credits === 1 ? '' : 's'}. Please top up first.`)
+      return
+    }
+
+    setUploading('uploading')
+    setJobStage('Preparing your document…')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not logged in')
+
+      // Sanitise filename — Supabase Storage rejects spaces, commas, brackets etc.
+      const safeName = file.name
+        .replace(/[^a-zA-Z0-9._-]/g, '_')  // replace anything not safe
+        .replace(/__+/g, '_')               // collapse multiple underscores
+        .replace(/^_+|_+$/g, '')            // trim leading/trailing underscores
+
+      // Step 1 — upload to Supabase Storage with sanitised path
+      const path = `${user.id}/${property.id}/${Date.now()}_${safeName}`
+      const { error: upErr } = await supabase.storage
+        .from('property-documents').upload(path, file)
+      if (upErr) throw new Error('Storage upload failed: ' + upErr.message)
+
+      // Step 2 — start analysis job (returns immediately with jobId)
+      setUploading('starting')
+      setJobStage('Starting analysis engine…')
+      const formData = new FormData()
+      formData.append('filePath', path)
+      formData.append('propertyId', property.id)
+      const startRes  = await fetch('/api/analyze/start', { method: 'POST', body: formData })
+      const startData = await startRes.json()
+      if (!startRes.ok) throw new Error(startData.error ?? 'Failed to start analysis')
+
+      setJobId(startData.jobId)
+      setUploading('extracting')
+
+      // Step 3 — poll for job status every 3 seconds
+      await new Promise<void>((resolve, reject) => {
+        const interval = setInterval(async () => {
+          try {
+            const res  = await fetch(`/api/analyze/status?jobId=${startData.jobId}`)
+            const data = await res.json()
+            if (data.stageLabel) setJobStage(data.stageLabel)
+            if (data.status) setUploading(data.status)
+            if (data.done) { clearInterval(interval); resolve() }
+            else if (data.failed) { clearInterval(interval); reject(new Error(data.error || 'Analysis failed')) }
+          } catch { /* network blip — keep polling */ }
+        }, 3000)
+      })
+
+      // Step 4 — reload results
+      setJobStage('Loading your results…')
+      setCredits(c => Math.max(0, c - 2))
+      window.dispatchEvent(new Event('credits-updated'))
+      await load()
+
+    } catch (e: any) {
+      alert('Upload failed: ' + e.message)
+    } finally {
+      setUploading(null)
+      setJobId(null)
+      setJobStage('')
+      if (fileInput) fileInput.value = ''
+    }
+  }
 
   async function handleRunScan() {
     if (!property) return
@@ -437,10 +517,18 @@ export default function PropertyDetailPage() {
               </button>
             )}
             {activeTab === 'Document Information' && (
-              <button onClick={triggerUpload} disabled={!!uploading}
-                className="text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-                style={{background: '#1A1A1A'}}>
-                {uploading ? '⟳ Processing…' : (s32 || contract) ? '↑ Re-extract' : '↑ Upload Documents'}
+              // REPLACE WITH:
+              <button
+                onClick={triggerUpload}
+                disabled={!!uploading || credits < 2}
+                title={credits < 2 ? `You need 2 credits to run an analysis (you have ${credits})` : undefined}
+                className="text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{background: credits < 2 ? '#9CA3AF' : '#1A1A1A'}}>
+                {uploading
+                  ? '⟳ Processing…'
+                  : credits < 2
+                  ? `⚡ Need 2 credits (have ${credits})`
+                  : (s32 || contract) ? '↑ Re-extract' : '↑ Upload Documents'}
               </button>
             )}
             {activeTab === 'Online Scan' && scan && (
@@ -486,10 +574,79 @@ export default function PropertyDetailPage() {
         )}
 
         {/* uploading notice */}
+        // REPLACE WITH:
+        {/* Full-screen processing modal */}
         {uploading && (
-          <div className="bg-gray-50 border-b border-gray-200 px-5 py-3 flex items-center gap-3">
-            <span className="text-gray-500 text-base animate-spin inline-block">⟳</span>
-            <div><p className="text-sm font-medium text-gray-700">{uploading}</p><p className="text-xs text-gray-400">Keep this page open.</p></div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:'rgba(10,10,10,0.75)', backdropFilter:'blur(6px)'}}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+
+              {/* Red header */}
+              <div className="px-6 pt-7 pb-5 text-center" style={{background:'linear-gradient(135deg,#E8001D 0%,#C0001A 100%)'}}>
+                <div style={{fontSize:'52px', lineHeight:1, marginBottom:'10px'}}>🦉</div>
+                <p className="text-white font-black text-lg leading-tight">
+                  {uploading === 'uploading'  ? 'Uploading your document' :
+                   uploading === 'starting'   ? 'Starting analysis engine' :
+                   uploading === 'extracting' ? 'Reading your document' :
+                   uploading === 'mapping'    ? 'Classifying pages' :
+                   uploading === 'analysing'  ? 'AI is reviewing' :
+                   uploading === 'saving'     ? 'Saving your results' :
+                   'PropertyOwl is on the case'}
+                </p>
+                <p className="text-red-200 text-xs mt-1.5">Please keep this page open</p>
+              </div>
+
+              {/* Live stage label */}
+              <div className="px-6 py-5">
+                <div className="rounded-xl px-4 py-3 mb-4 min-h-[48px] flex items-center gap-3 border border-red-100 bg-red-50">
+                  <div className="flex gap-1 flex-shrink-0">
+                    {[0,1,2].map(d => (
+                      <div key={d} className="w-1.5 h-1.5 rounded-full bg-[#E8001D] animate-bounce"
+                        style={{animationDelay:`${d*0.15}s`}} />
+                    ))}
+                  </div>
+                  <p className="text-sm font-semibold text-red-800 leading-snug">
+                    {jobStage || 'Initialising…'}
+                  </p>
+                </div>
+
+                {/* Step progress */}
+                <div className="space-y-2.5">
+                  {[
+                    { stage: 'uploading',  icon: '📤', label: 'Uploading to secure storage' },
+                    { stage: 'extracting', icon: '📄', label: 'Extracting text from all pages' },
+                    { stage: 'mapping',    icon: '🗺️', label: 'Classifying pages & structure' },
+                    { stage: 'analysing',  icon: '🧠', label: 'AI reviewing S32 & contract' },
+                    { stage: 'saving',     icon: '💾', label: 'Saving results' },
+                  ].map((step) => {
+                    const order = ['uploading','starting','extracting','mapping','analysing','saving']
+                    const cur   = order.indexOf(uploading || '')
+                    const idx   = order.indexOf(step.stage)
+                    const done  = idx < cur
+                    const active = idx === cur
+                    return (
+                      <div key={step.stage} className="flex items-center gap-3">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 font-bold
+                          ${done   ? 'bg-emerald-500 text-white' : ''}
+                          ${active ? 'bg-red-100 text-red-600 ring-2 ring-red-300' : ''}
+                          ${!done && !active ? 'bg-gray-100 text-gray-300' : ''}`}>
+                          {done ? '✓' : step.icon}
+                        </div>
+                        <span className={`text-xs font-medium
+                          ${done   ? 'text-emerald-600' : ''}
+                          ${active ? 'text-gray-900 font-semibold' : ''}
+                          ${!done && !active ? 'text-gray-300' : ''}`}>
+                          {step.label}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <p className="text-center text-xs text-gray-400 mt-5">
+                  This usually takes 60–120 seconds
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
