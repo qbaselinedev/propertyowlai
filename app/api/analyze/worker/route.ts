@@ -320,8 +320,14 @@ function buildPolicyPromptSuffix(policy: Record<string, boolean> | null): string
 
 PROFESSIONAL ACCESS MODE: This report is being generated for a licensed professional with authority to advise clients on property matters. You are authorised to use your full analytical capability. You MUST:
 ${caps.map(c => `- ${c}`).join('\n')}
+- For EVERY item in items_detected, populate the "recommendation" field with specific professional advice for the conveyancer/lawyer
+- For EVERY item in items_detected, populate the "suggested_action" field with the specific next step to take (e.g. "Request vendor to discharge mortgage prior to settlement", "Negotiate removal of this condition", "Obtain specialist advice on this overlay")
+- Generate a risk_score from 1-10 based on severity and volume of issues (1=clean, 10=major concerns)
+- Write a risk_summary of 2-3 sentences summarising the overall risk profile
+- Generate an email_draft object with subject and body — a professional summary email suitable for the conveyancer to send to their client, covering high-priority items, recommended actions, and standard disclaimer
+- Reference specific Victorian legislation, sections and standard conveyancing practice where relevant
 
-Apply Victorian property law expertise throughout. Reference specific clauses, legislation and standard conveyancing practice where relevant.`
+Apply Victorian property law expertise throughout. Be thorough — this is a professional tool.`
 }
 
 // ─── JSON schemas ─────────────────────────────────────────────────────────────
@@ -329,18 +335,37 @@ Apply Victorian property law expertise throughout. Reference specific clauses, l
 const S32_SCHEMA = `{
   "document_type": "s32",
   "property_address": "",
+  "lot_details": "",
+  "vendor_names": "",
   "items_detected_count": 0,
   "document_summary": "",
-  "items_detected": [{"severity":"high|medium|low","category":"","issue":"","context":""}],
+  "risk_score": 0,
+  "risk_summary": "",
+  "items_detected": [{"severity":"high|medium|low","category":"","issue":"","context":"","recommendation":"","suggested_action":""}],
   "sections": {
-    "title": {
+    "title_and_ownership": {
       "status":"clear|issues|not_provided",
-      "volume":"","folio":"","lot":"","plan":"",
-      "encumbrances":[{"type":"","detail":"","registered":""}],
+      "ct_number":"","lot_plan":"","volume_folio":"","registered_proprietors":"",
+      "encumbrances":[{"type":"mortgage|covenant|caveat|agreement|easement","reference":"","detail":"","expiry":""}],
+      "findings":[],"summary":""
+    },
+    "planning_and_zoning": {
+      "status":"clear|issues|not_provided",
+      "zone":"","zone_description":"","overlays":[],"gaic_applicable":false,"gaic_amount":"",
+      "findings":[],"summary":""
+    },
+    "easements_and_covenants": {
+      "status":"clear|issues|not_provided",
+      "items":[{"type":"","reference":"","description":"","expiry":""}],
+      "findings":[],"summary":""
+    },
+    "building_permits": {
+      "status":"clear|issues|not_provided",
+      "permits":[{"number":"","date":"","description":"","value":"","surveyor":""}],
       "findings":[],"summary":""
     },
     "owners_corporation": {
-      "status":"clear|issues|not_provided",
+      "status":"clear|issues|not_applicable",
       "applicable":false,"oc_number":"","annual_fee":"","special_levies":"","lot_liability":"","lot_entitlement":"",
       "findings":[],"summary":""
     },
@@ -354,6 +379,7 @@ const S32_SCHEMA = `{
     "vendor_disclosure": {
       "status":"clear|issues|incomplete",
       "road_access":true,"services_connected":[],
+      "existing_tenancy":{"exists":false,"tenant_name":"","rent_amount":"","end_date":""},
       "findings":[],"summary":""
     }
   },
@@ -361,6 +387,7 @@ const S32_SCHEMA = `{
   "also_present":[],
   "positive_findings":[],
   "skipped_pages_note":"",
+  "email_draft":{"subject":"","body":""},
   "disclaimer":"${DISCLAIMER}"
 }`
 
@@ -369,7 +396,9 @@ const CONTRACT_SCHEMA = `{
   "property_address": "",
   "items_detected_count": 0,
   "document_summary": "",
-  "items_detected": [{"severity":"high|medium|low","category":"","issue":"","context":""}],
+  "items_detected": [{"severity":"high|medium|low","category":"","issue":"","context":"","recommendation":"","suggested_action":""}],
+  "risk_score": 0,
+  "risk_summary": "",
   "sections": {
     "price_and_deposit": {
       "status":"clear|issues|not_provided",
@@ -667,7 +696,29 @@ export async function POST(request: NextRequest) {
       console.log(`[PropertyOwl Worker] Conveyancer ${userId} not yet verified — using facts-only mode`)
     }
 
-    const userPolicy = allPolicies[effectiveUserType] || allPolicies['buyer'] || null
+    // If no policies saved in DB yet, apply sensible defaults:
+    // professionals get full analysis, everyone else gets facts-only
+    const PROFESSIONAL_TYPES = ['conveyancer', 'lawyer']
+    let userPolicy: Record<string, boolean> | null = allPolicies[effectiveUserType] ?? null
+
+    if (!userPolicy) {
+      // No policy configured — use safe defaults
+      if (PROFESSIONAL_TYPES.includes(effectiveUserType)) {
+        userPolicy = {
+          facts_only_mode: false,
+          show_risk_score: true,
+          show_red_flags: true,
+          show_risk_summary: true,
+          show_issues: true,
+          show_llm_recommendations: true,
+          show_suggested_actions: true,
+        }
+        console.log(`[PropertyOwl Worker] No policy found for ${effectiveUserType} — using full professional default`)
+      } else {
+        userPolicy = { facts_only_mode: true }
+        console.log(`[PropertyOwl Worker] No policy found for ${effectiveUserType} — using facts-only default`)
+      }
+    }
     console.log(`[PropertyOwl Worker] User type: ${userType}, effective: ${effectiveUserType}, facts_only: ${userPolicy?.facts_only_mode ?? true}`)
 
     // Stage 1 — download PDF

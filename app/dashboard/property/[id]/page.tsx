@@ -5,6 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import React from 'react'
+import ProfessionalReportView from '@/components/ProfessionalReportView'
+import ProfessionalDisclaimer from '@/components/ProfessionalDisclaimer'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,10 +71,11 @@ const REA = '#E8001D'
 const TABS = ['Document Information', 'Online Scan']
 const CONTRACT_SUBTABS = ['Overview', 'S32 Information', 'Items Detected', 'Questions Identified', 'Sale Information', 'AI Analysed']
 
+// REPLACE WITH:
 const sev = {
-  high:   { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-800', badge: 'bg-gray-100 text-gray-700', strip: '#6B7280', icon: '' },
-  medium: { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-800', badge: 'bg-gray-100 text-gray-700', strip: '#6B7280', icon: '' },
-  low:    { bg: 'bg-blue-50',  border: 'border-blue-200',  text: 'text-blue-700',  badge: 'bg-blue-100 text-blue-700',  strip: '#3B82F6', icon: '🔵' },
+  high:   { bg: 'bg-red-50',   border: 'border-red-300',   text: 'text-red-800',   badge: 'bg-red-100 text-red-700',   strip: '#DC2626', icon: '🔴' },
+  medium: { bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-800', badge: 'bg-amber-100 text-amber-700', strip: '#D97706', icon: '🟡' },
+  low:    { bg: 'bg-blue-50',  border: 'border-blue-300',  text: 'text-blue-800',  badge: 'bg-blue-100 text-blue-700',  strip: '#3B82F6', icon: '🔵' },
 }
 const stc = {
   clear:          { color: 'text-gray-600',    bg: 'bg-gray-50',    icon: '✓' },
@@ -110,6 +113,11 @@ export default function PropertyDetailPage() {
   const [downloading, setDownloading] = useState(false)
   const [downloadingScan, setDownloadingScan] = useState(false)
   const [credits, setCredits] = useState(0)
+  // ADD AFTER (do not remove the existing line):
+  const [userType, setUserType]       = useState<string>('buyer')
+  const [reportIds, setReportIds]     = useState<{ s32Id?: string; contractId?: string }>({})
+  const [showDisclaimer, setShowDisclaimer] = useState(true)
+  const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false)
   const [fileInput] = useState(() => typeof window !== 'undefined' ?
     document.createElement('input') : null)
 
@@ -118,6 +126,13 @@ export default function PropertyDetailPage() {
     load()
   }, [id])
 
+  // ADD AFTER the useEffect:
+  // Reset disclaimer state each time the property changes
+  useEffect(() => {
+    setDisclaimerAcknowledged(false)
+    setShowDisclaimer(true)
+  }, [id])
+  
   async function load() {
     setLoading(true); setError(null)
     try {
@@ -133,13 +148,29 @@ export default function PropertyDetailPage() {
       }
 
       const { data: reports } = await supabase.from('reports').select('*').eq('property_id', id).order('created_at', { ascending: false })
-      if (reports) {
+      // ADD AFTER that line (before the reports processing):
+      // Load user type for conditional rendering
+      if (user) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('user_type, conveyancer_verified')
+          .eq('id', user.id)
+          .single()
+        if (prof) {
+          const isPro = ['conveyancer', 'lawyer'].includes(prof.user_type ?? '') && prof.conveyancer_verified
+          setUserType(isPro ? prof.user_type : 'buyer')
+        }
+      }
+if (reports) {
         const s32r  = reports.find((r: any) => r.document_type === 's32') ?? reports.find((r: any) => r.raw_analysis?.document_type === 's32')
         const conr  = reports.find((r: any) => r.document_type === 'contract') ?? reports.find((r: any) => r.raw_analysis?.document_type === 'contract')
         const scanr = reports.find((r: any) => r.document_type === 'online_scan')
         if (s32r?.raw_analysis) setS32(s32r.raw_analysis)
         if (conr?.raw_analysis) setContract(conr.raw_analysis)
         if (scanr?.raw_analysis) setScan(scanr.raw_analysis)
+
+        // Capture report IDs for professional save functionality
+        setReportIds({ s32Id: s32r?.id, contractId: conr?.id })
       }
     } catch (e: any) { setError(e?.message ?? 'Failed to load.') }
     finally { setLoading(false) }
@@ -655,13 +686,44 @@ export default function PropertyDetailPage() {
           {activeTab === 'Document Information' && !(s32 || contract) && (
             <ContractScanEmptyState credits={credits} onUpload={triggerUpload} />
           )}
-          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'Overview'          && <OverviewTab s32={s32} contract={contract} property={property} credits={credits} onUpload={triggerUpload} onNavigate={(t: string) => setContractSubTab(t)} onDownload={handleDownloadPack} />}
-          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'S32 Information'        && <S32ReviewTab s32={s32} onUpload={triggerUpload} credits={credits} />}
-          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'Items Detected'  && <RiskAnalysisTab s32={s32} contract={contract} property={property} />}
-          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'Questions Identified'  && <NegotiationBriefTab s32={s32} contract={contract} />}
-          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'Sale Information'    && <ContractTab contract={contract} credits={credits} onUpload={triggerUpload} />}
-          {activeTab === 'Document Information' && (s32 || contract) && contractSubTab === 'AI Analysed'  && <ConfirmedClearTab s32={s32} contract={contract} />}
-          {activeTab === 'Online Scan'   && <PropertyScanTab scan={scan} scanning={scanning} onRunScan={handleRunScan} onDownloadPdf={handleDownloadScanPdf} downloadingPdf={downloadingScan} property={property} credits={credits} />}
+          {activeTab === 'Document Information' && (s32 || contract) && (
+            <>
+              {/* Professional view — conveyancer/lawyer only */}
+              {['conveyancer', 'lawyer'].includes(userType) ? (
+                <>
+                  {showDisclaimer && !disclaimerAcknowledged ? (
+                    <ProfessionalDisclaimer
+                      userType={userType as 'conveyancer' | 'lawyer'}
+                      onAccept={() => {
+                        setDisclaimerAcknowledged(true)
+                        setShowDisclaimer(false)
+                      }}
+                    />
+                  ) : (
+                    <ProfessionalReportView
+                      s32={s32}
+                      contract={contract}
+                      reportIds={reportIds}
+                      propertyAddress={`${property.address}, ${property.suburb}`}
+                      userType={userType as 'conveyancer' | 'lawyer'}
+                      onDisclaimerNotAcknowledged={() => setShowDisclaimer(true)}
+                    />
+                  )}
+                </>
+              ) : (
+                /* Facts-only view — all other user types */
+                <>
+                  {contractSubTab === 'Overview'             && <OverviewTab s32={s32} contract={contract} property={property} credits={credits} onUpload={triggerUpload} onNavigate={(t: string) => setContractSubTab(t)} onDownload={handleDownloadPack} />}
+                  {contractSubTab === 'S32 Information'      && <S32ReviewTab s32={s32} onUpload={triggerUpload} credits={credits} />}
+                  {contractSubTab === 'Items Detected'       && <RiskAnalysisTab s32={s32} contract={contract} property={property} />}
+                  {contractSubTab === 'Questions Identified' && <NegotiationBriefTab s32={s32} contract={contract} />}
+                  {contractSubTab === 'Sale Information'     && <ContractTab contract={contract} credits={credits} onUpload={triggerUpload} />}
+                  {contractSubTab === 'AI Analysed'          && <ConfirmedClearTab s32={s32} contract={contract} />}
+                </>
+              )}
+            </>
+          )}
+                    {activeTab === 'Online Scan'   && <PropertyScanTab scan={scan} scanning={scanning} onRunScan={handleRunScan} onDownloadPdf={handleDownloadScanPdf} downloadingPdf={downloadingScan} property={property} credits={credits} />}
         </div>
       </div>
     </div>
@@ -911,10 +973,14 @@ function S32ReviewTab({ s32, onUpload, credits }: { s32: S32Analysis | null; onU
                   <div className="p-4">
                     <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">{flag.category}</span>
                     <p className={`text-sm font-semibold ${c.text} mt-2 mb-2`}>{flag.issue}</p>
-                    <div className="flex items-start gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                      <span className="text-xs flex-shrink-0">💡</span>
-                      
-                    </div>
+                    {(flag.recommendation || flag.context) && (
+                      <div className="flex items-start gap-2 bg-gray-50 rounded-lg px-3 py-2 mt-2">
+                        <span className="text-xs flex-shrink-0">💡</span>
+                        <p className="text-xs text-gray-700 leading-relaxed">
+                          {flag.recommendation || flag.context}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )
