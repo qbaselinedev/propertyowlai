@@ -110,26 +110,40 @@ export default function AdminUsersPage() {
 
   async function handleApprove(userId: string) {
     setActioning(userId)
-    const res = await fetch('/api/admin/approve-user', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, action: 'approve' }),
-    })
-    const data = await res.json()
-    if (!data.success) console.error('Approve failed:', data.error)
+    try {
+      const res = await fetch('/api/admin/approve-user', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, action: 'approve' }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        alert('Approve failed: ' + (data.error || 'Unknown error'))
+        console.error('Approve failed:', data.error)
+      }
+    } catch (err: any) {
+      alert('Approve failed: ' + err.message)
+    }
     setActioning(null)
     await load()
   }
 
   async function handleReject(userId: string) {
     setActioning(userId)
-    const res = await fetch('/api/admin/approve-user', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, action: 'reject', reason: rejectReason || undefined }),
-    })
-    const data = await res.json()
-    if (!data.success) console.error('Reject failed:', data.error)
+    try {
+      const res = await fetch('/api/admin/approve-user', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, action: 'reject', reason: rejectReason || undefined }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        alert('Reject failed: ' + (data.error || 'Unknown error'))
+        console.error('Reject failed:', data.error)
+      }
+    } catch (err: any) {
+      alert('Reject failed: ' + err.message)
+    }
     setActioning(null)
     setRejectingId(null)
     setRejectReason('')
