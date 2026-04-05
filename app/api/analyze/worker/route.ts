@@ -744,13 +744,14 @@ export async function POST(request: NextRequest) {
       effectiveUserType = 'buyer'
       console.log(`[PropertyOwl Worker] Conveyancer ${userId} not yet verified — using facts-only mode`)
 
+    }
+
     // Professional mode needs more tokens for recommendations + email draft.
     // Always floor at 16000 for conveyancer/lawyer regardless of admin setting.
     const isProfessionalRun = ['conveyancer', 'lawyer'].includes(effectiveUserType)
     const maxTokens = config.max_tokens
       ? Math.max(config.max_tokens, isProfessionalRun ? 16000 : 4000)
       : isProfessionalRun ? 16000 : 8000
-    }
 
     // If no policies saved in DB yet, apply sensible defaults:
     // professionals get full analysis, everyone else gets facts-only
