@@ -28,7 +28,9 @@ interface RedFlag {
   severity: 'high' | 'medium' | 'low'
   category: string
   issue: string
-  recommendation: string
+  context?: string
+  recommendation?: string
+  suggested_action?: string
 }
 
 interface S32Analysis {
@@ -132,7 +134,7 @@ export default function PropertyDetailPage() {
     setDisclaimerAcknowledged(false)
     setShowDisclaimer(true)
   }, [id])
-  
+
   async function load() {
     setLoading(true); setError(null)
     try {
