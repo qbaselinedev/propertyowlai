@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -16,6 +16,18 @@ interface InviteData {
 }
 
 export default function InvitePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin w-6 h-6 border-2 border-[#E8001D] border-t-transparent rounded-full" />
+      </div>
+    }>
+      <InvitePageInner />
+    </Suspense>
+  )
+}
+
+function InvitePageInner() {
   const params    = useSearchParams()
   const router    = useRouter()
   const supabase  = createClient()
@@ -92,13 +104,7 @@ export default function InvitePage() {
   }
 
   // ── Loading ──────────────────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin w-6 h-6 border-2 border-[#E8001D] border-t-transparent rounded-full" />
-      </div>
-    )
-  }
+  if (loading) return null
 
   // ── Invalid token ────────────────────────────────────────────────────────────
   if (!token || error) {
