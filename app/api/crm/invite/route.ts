@@ -62,12 +62,12 @@ export async function POST(request: NextRequest) {
 
   // If already joined PropertyOwl, just grant access — no need to invite again
   if (contact.propertyowl_user_id && propertyId) {
-    await db.from('shared_property_access').insert({
+    await db.from('shared_property_access').upsert({
       property_id: propertyId,
       user_id:     contact.propertyowl_user_id,
       granted_by:  user.id,
       access_type: 'facts_only',
-    }).onConflict('property_id,user_id').ignore()
+    }, { onConflict: 'property_id,user_id', ignoreDuplicates: true })
 
     return NextResponse.json({ success: true, alreadyJoined: true })
   }
