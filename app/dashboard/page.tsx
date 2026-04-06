@@ -20,16 +20,20 @@ interface Property {
   s32_reviewed: boolean
   is_demo?: boolean
   created_at: string
+  _shared?: boolean   // true when this property was shared by a conveyancer
 }
 
 const typeIcon: Record<string, string> = {
   house: '🏠', apartment: '🏢', townhouse: '🏘️', land: '🌿', other: '🏗️',
 }
 
-// Neutral item count display — no advisory labels
-function itemsLabel(score: number | null, reviewed: boolean): { label: string; color: string; bg: string; dot: string } {
-  if (!reviewed || score === null) return { label: 'Not yet reviewed', color: 'text-gray-400', bg: 'bg-gray-100', dot: 'bg-gray-300' }
-  if (score === 0) return { label: 'No items detected', color: 'text-emerald-700', bg: 'bg-emerald-50', dot: 'bg-emerald-400' }
+function itemsLabel(score: number | null, reviewed: boolean): {
+  label: string; color: string; bg: string; dot: string
+} {
+  if (!reviewed || score === null)
+    return { label: 'Not yet reviewed', color: 'text-gray-400', bg: 'bg-gray-100', dot: 'bg-gray-300' }
+  if (score === 0)
+    return { label: 'No items detected', color: 'text-emerald-700', bg: 'bg-emerald-50', dot: 'bg-emerald-400' }
   return { label: `${score} item${score !== 1 ? 's' : ''} detected`, color: 'text-gray-600', bg: 'bg-gray-50', dot: 'bg-gray-400' }
 }
 
@@ -39,10 +43,10 @@ function greeting() {
 }
 
 export default function DashboardPage() {
-  const [profile, setProfile] = useState<Profile | null>(null)
+  const [profile, setProfile]       = useState<Profile | null>(null)
   const [properties, setProperties] = useState<Property[]>([])
   const [totalItems, setTotalItems] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading]       = useState(true)
   const supabase = createClient()
 
   useEffect(() => {
@@ -50,25 +54,48 @@ export default function DashboardPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      const [{ data: prof }, { data: props }] = await Promise.all([
+      // Load profile and own properties in parallel
+      const [{ data: prof }, { data: ownProps }] = await Promise.all([
         supabase.from('profiles').select('full_name, credits').eq('id', user.id).single(),
         supabase.from('properties').select('*, is_demo').eq('user_id', user.id).order('created_at', { ascending: false }),
       ])
 
       setProfile(prof)
-      const propList = props || []
+
+      // Load shared properties (properties a conveyancer/lawyer has shared with this user)
+      const { data: sharedAccess } = await supabase
+        .from('shared_property_access')
+        .select('property_id')
+        .eq('user_id', user.id)
+
+      let sharedProps: Property[] = []
+      if (sharedAccess && sharedAccess.length > 0) {
+        const sharedIds = sharedAccess.map((a: any) => a.property_id)
+        const { data: shared } = await supabase
+          .from('properties')
+          .select('*, is_demo')
+          .in('id', sharedIds)
+        sharedProps = (shared ?? []).map((p: any) => ({ ...p, _shared: true }))
+      }
+
+      // Merge: own first, then shared (deduplicated by id)
+      const ownList    = ownProps ?? []
+      const ownIds     = new Set(ownList.map((p: any) => p.id))
+      const dedupedShared = sharedProps.filter(p => !ownIds.has(p.id))
+      const propList   = [...ownList, ...dedupedShared]
       setProperties(propList)
 
+      // Count total items across all properties
       if (propList.length > 0) {
         const ids = propList.map((p: Property) => p.id)
         const { data: reports } = await supabase
           .from('reports')
-          .select('red_flags')
+          .select('raw_analysis')
           .in('property_id', ids)
         if (reports) {
           const total = reports.reduce((sum: number, r: any) => {
-            const flags = Array.isArray(r.red_flags) ? r.red_flags : []
-            return sum + flags.length
+            const items = r.raw_analysis?.items_detected ?? r.raw_analysis?.red_flags ?? []
+            return sum + (Array.isArray(items) ? items.length : 0)
           }, 0)
           setTotalItems(total)
         }
@@ -79,9 +106,11 @@ export default function DashboardPage() {
     load()
   }, [])
 
-  const reviewed = properties.filter(p => p.s32_reviewed).length
-  const firstName = profile?.full_name?.split(' ')[0] || 'there'
-  const withItems = properties.filter(p => p.s32_reviewed && p.risk_score && p.risk_score > 0).length
+  const ownProperties    = properties.filter(p => !p._shared)
+  const sharedProperties = properties.filter(p => p._shared)
+  const reviewed         = properties.filter(p => p.s32_reviewed).length
+  const firstName        = profile?.full_name?.split(' ')[0] || 'there'
+  const withItems        = properties.filter(p => p.s32_reviewed && p.risk_score && p.risk_score > 0).length
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -99,32 +128,43 @@ export default function DashboardPage() {
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-gray-500 font-medium">{greeting()}</p>
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mt-0.5">{firstName} 👋</h1>
+          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mt-0.5">
+            {firstName} 👋
+          </h1>
           <p className="text-gray-400 text-sm mt-1">
             {properties.length === 0
               ? 'Add a property to get started'
               : `Tracking ${properties.length} propert${properties.length === 1 ? 'y' : 'ies'}`}
           </p>
         </div>
-        <Link href="/dashboard/add-property"
-          className="flex items-center gap-2 bg-[#E8001D] hover:bg-red-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition-colors">
+        <Link
+          href="/dashboard/add-property"
+          className="flex items-center gap-2 bg-[#E8001D] hover:bg-red-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition-colors"
+        >
           + Add Property
         </Link>
       </div>
 
       {/* ── Stats ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Properties" value={properties.length} sub="In your portfolio" icon="🏠" />
+        <StatCard
+          label="Properties"
+          value={properties.length}
+          sub="In your portfolio"
+          icon="🏠"
+        />
         <StatCard
           label="Credits"
           value={profile?.credits ?? 0}
-          sub={profile?.credits !== undefined
-            ? profile.credits >= 5
-              ? `~${Math.floor(profile.credits / 5)} full address${Math.floor(profile.credits / 5) !== 1 ? 'es' : ''} remaining`
-              : profile.credits > 0
-                ? `${profile.credits} credit${profile.credits !== 1 ? 's' : ''} — top up to continue`
-                : 'No credits — top up to continue'
-            : 'Top up anytime'}
+          sub={
+            profile?.credits !== undefined
+              ? profile.credits >= 5
+                ? `~${Math.floor(profile.credits / 5)} full address${Math.floor(profile.credits / 5) !== 1 ? 'es' : ''} remaining`
+                : profile.credits > 0
+                  ? `${profile.credits} credit${profile.credits !== 1 ? 's' : ''} — top up to continue`
+                  : 'No credits — top up to continue'
+              : 'Top up anytime'
+          }
           icon="💳"
           action={{ label: 'Buy credits', href: '/dashboard/buy-credits' }}
           highlight={profile?.credits !== undefined && profile.credits < 5}
@@ -149,26 +189,46 @@ export default function DashboardPage() {
         <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 flex items-center gap-3">
           <span className="text-base flex-shrink-0">📋</span>
           <p className="text-sm text-blue-800">
-            <strong>{withItems} propert{withItems > 1 ? 'ies' : 'y'}</strong> in your portfolio {withItems > 1 ? 'have' : 'has'} extracted document items available to view.
+            <strong>{withItems} propert{withItems > 1 ? 'ies' : 'y'}</strong> in your portfolio{' '}
+            {withItems > 1 ? 'have' : 'has'} extracted document items available to view.
           </p>
         </div>
       )}
 
-      {/* ── Properties ── */}
-      {properties.length === 0 ? (
+      {/* ── Own properties ── */}
+      {ownProperties.length === 0 && sharedProperties.length === 0 ? (
         <EmptyState />
       ) : (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-bold text-gray-900">My Properties</h2>
-            <Link href="/dashboard/add-property" className="text-sm text-[#E8001D] font-semibold hover:underline">
-              + Add another
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {properties.map(p => <PropertyCard key={p.id} property={p} />)}
-          </div>
-        </div>
+        <>
+          {ownProperties.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-bold text-gray-900">My Properties</h2>
+                <Link href="/dashboard/add-property" className="text-sm text-[#E8001D] font-semibold hover:underline">
+                  + Add another
+                </Link>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {ownProperties.map(p => <PropertyCard key={p.id} property={p} />)}
+              </div>
+            </div>
+          )}
+
+          {/* ── Shared properties (from conveyancer/lawyer invite) ── */}
+          {sharedProperties.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <h2 className="text-base font-bold text-gray-900">Shared With Me</h2>
+                <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
+                  Shared by your conveyancer
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {sharedProperties.map(p => <PropertyCard key={p.id} property={p} />)}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* ── Legal disclaimer ── */}
@@ -184,9 +244,13 @@ export default function DashboardPage() {
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 
 function StatCard({ label, value, sub, icon, action, highlight, flagged }: {
-  label: string; value: number; sub: string; icon: string
+  label: string
+  value: number
+  sub: string
+  icon: string
   action?: { label: string; href: string }
-  highlight?: boolean; flagged?: boolean
+  highlight?: boolean
+  flagged?: boolean
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -198,69 +262,59 @@ function StatCard({ label, value, sub, icon, action, highlight, flagged }: {
           </Link>
         )}
       </div>
-      <p className={`text-3xl font-extrabold leading-none ${highlight ? 'text-amber-600' : flagged ? 'text-[#E8001D]' : 'text-gray-900'}`}>
+      <p className={`text-3xl font-extrabold leading-none ${highlight ? 'text-amber-600' : flagged ? 'text-gray-700' : 'text-gray-900'}`}>
         {value}
       </p>
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-1">{label}</p>
-      <p className="text-xs text-gray-400 mt-1">{sub}</p>
+      <p className="text-xs text-gray-400 mt-1.5 leading-snug">{sub}</p>
     </div>
   )
 }
 
 // ─── Property Card ────────────────────────────────────────────────────────────
 
-function PropertyCard({ property: p }: { property: Property }) {
-  const attn = itemsLabel(p.risk_score, p.s32_reviewed)
-  const price = p.price ? `$${p.price.toLocaleString('en-AU')}` : 'Price not set'
-  const statusLabel = !p.s32_reviewed ? 'Not yet reviewed' : 'Reviewed'
-  const statusColor = !p.s32_reviewed ? 'text-gray-400 bg-gray-100' : 'text-emerald-700 bg-emerald-50'
+function PropertyCard({ property }: { property: Property }) {
+  const il = itemsLabel(property.risk_score, property.s32_reviewed)
+  const price = property.price
+    ? `$${(property.price / 1000).toFixed(0)}k`
+    : null
 
   return (
-    <Link href={`/dashboard/property/${p.id}`}>
-      <div className="bg-white rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-150 overflow-hidden group cursor-pointer h-full flex flex-col">
-        {/* Neutral top accent */}
-        <div className="h-1" style={{ background: p.s32_reviewed ? '#E8001D' : '#D1D5DB' }} />
+    <Link
+      href={`/dashboard/property/${property.id}`}
+      className="block bg-white rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all group overflow-hidden"
+    >
+      {/* Top colour strip */}
+      <div className="h-1 bg-[#E8001D]" />
 
-        <div className="p-5 flex-1 flex flex-col">
-          <div className="flex items-start justify-between gap-2 mb-4">
-            <span className="text-xl flex-shrink-0">{typeIcon[p.property_type] ?? '🏠'}</span>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              {p.is_demo && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#1A1A1A] text-white">🦉 Demo</span>
-              )}
-              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${statusColor}`}>
-                {p.s32_reviewed ? '✓ ' : ''}{statusLabel}
-              </span>
-            </div>
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-black text-gray-900 group-hover:text-[#E8001D] transition-colors truncate">
+              {property.address}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">{property.suburb}{property.postcode ? ` ${property.postcode}` : ''}</p>
           </div>
-
-          <div className="flex-1">
-            <h3 className="font-bold text-gray-900 text-sm leading-snug group-hover:text-[#E8001D] transition-colors">
-              {p.address}
-            </h3>
-            <p className="text-gray-400 text-xs mt-0.5">{p.suburb}{p.postcode ? ` ${p.postcode}` : ''}, VIC</p>
-          </div>
-
-          <div className="flex items-end justify-between mt-4 pt-3 border-t border-gray-100">
-            <div>
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-0.5">Asking</p>
-              <p className="text-sm font-bold text-gray-900">{price}</p>
-            </div>
-            {p.s32_reviewed ? (
-              <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg ${attn.bg}`}>
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${attn.dot}`} />
-                <span className={`text-xs font-semibold ${attn.color}`}>{attn.label}</span>
-              </div>
-            ) : (
-              <span className="text-xs text-gray-400">Not reviewed</span>
-            )}
-          </div>
+          <span className="text-lg flex-shrink-0">{typeIcon[property.property_type] ?? '🏗️'}</span>
         </div>
 
-        <div className="px-5 pb-4">
-          <span className="flex items-center gap-1 text-xs text-[#E8001D] font-semibold">
-            View details <span className="group-hover:translate-x-0.5 transition-transform inline-block">→</span>
-          </span>
+        <div className="flex items-center justify-between">
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${il.bg}`}>
+            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${il.dot}`} />
+            <span className={`text-xs font-semibold ${il.color}`}>{il.label}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {price && <span className="text-xs font-bold text-gray-400">{price}</span>}
+            {property._shared && (
+              <span className="text-[10px] bg-blue-100 text-blue-600 font-bold px-1.5 py-0.5 rounded-full">
+                Shared
+              </span>
+            )}
+            {property.is_demo && (
+              <span className="text-[10px] bg-purple-100 text-purple-600 font-bold px-1.5 py-0.5 rounded-full">
+                Demo
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </Link>
@@ -271,26 +325,18 @@ function PropertyCard({ property: p }: { property: Property }) {
 
 function EmptyState() {
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
-      <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
-        <span className="text-3xl">🦉</span>
-      </div>
-      <h3 className="text-lg font-bold text-gray-900 mb-2">No properties yet</h3>
-      <p className="text-gray-500 text-sm max-w-sm mx-auto mb-6">
-        Add a property you're considering and PropertyOwl AI will extract and display information from the documents.
+    <div className="text-center py-16 px-6">
+      <span className="text-5xl">🏠</span>
+      <h3 className="text-xl font-black text-gray-900 mt-4 mb-2">No properties yet</h3>
+      <p className="text-gray-400 text-sm mb-6 max-w-sm mx-auto">
+        Add a Victorian property to start reviewing its Section 32 and Contract of Sale.
       </p>
-      <Link href="/dashboard/add-property"
-        className="inline-block bg-[#E8001D] hover:bg-red-700 text-white px-7 py-2.5 rounded-xl font-bold text-sm transition-colors">
-        Add Your First Property →
+      <Link
+        href="/dashboard/add-property"
+        className="inline-flex items-center gap-2 bg-[#E8001D] hover:bg-red-700 text-white px-6 py-3 rounded-xl font-bold text-sm transition-colors"
+      >
+        + Add Your First Property
       </Link>
-      <div className="mt-8 flex items-center justify-center gap-8">
-        {[['📄', 'Upload S32 & Contract'], ['🔍', 'AI extracts the info'], ['📋', 'Review at a glance']].map(([icon, label]) => (
-          <div key={label} className="flex flex-col items-center gap-1.5">
-            <span className="text-xl">{icon}</span>
-            <span className="text-xs text-gray-400 font-medium">{label}</span>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
