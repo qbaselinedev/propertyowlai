@@ -74,6 +74,27 @@ function ProfessionalDashboard({ profile }: { profile: Profile }) {
     setLoading(false)
   }
 
+  const [draftReports, setDraftReports]         = useState(0)
+  const [finalisedReports, setFinalisedReports] = useState(0)
+
+  useEffect(() => {
+    // Count draft vs finalised reports for this conveyancer's properties
+    async function loadReportStats() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: reports } = await supabase
+        .from('reports')
+        .select('raw_analysis')
+        .eq('user_id', user.id)
+        .in('document_type', ['s32', 'contract'])
+      if (reports) {
+        setFinalisedReports(reports.filter((r: any) => r.raw_analysis?._professional_finalised).length)
+        setDraftReports(reports.filter((r: any) => r.raw_analysis && !r.raw_analysis._professional_finalised).length)
+      }
+    }
+    loadReportStats()
+  }, [])
+
   const total   = customers.length
   const active  = customers.filter(c => c.joined_at || c.propertyowl_user_id).length
   const invited = customers.filter(c => c.invite_sent_at && !c.joined_at).length
@@ -115,19 +136,30 @@ function ProfessionalDashboard({ profile }: { profile: Profile }) {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Clients', value: total,   icon: '👥', sub: 'In your CRM',       color: 'text-gray-900' },
-          { label: 'Active',        value: active,  icon: '✅', sub: 'On PropertyOwl',    color: 'text-emerald-600' },
-          { label: 'Invited',       value: invited, icon: '📨', sub: 'Awaiting signup',   color: 'text-blue-600' },
-          { label: 'Not Invited',   value: pending, icon: '📋', sub: 'CRM only',          color: 'text-gray-500' },
-        ].map(card => (
-          <div key={card.label} className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-            <span className="text-2xl">{card.icon}</span>
-            <p className={`text-3xl font-bold leading-none mt-3 ${card.color}`}>{card.value}</p>
-            <p className="text-sm font-semibold text-gray-700 mt-1.5">{card.label}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{card.sub}</p>
-          </div>
-        ))}
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+          <span className="text-2xl">👥</span>
+          <p className="text-3xl font-bold leading-none mt-3 text-gray-900">{total}</p>
+          <p className="text-sm font-semibold text-gray-700 mt-1.5">Total Clients</p>
+          <p className="text-xs text-gray-400 mt-0.5">{active} active · {pending} CRM only</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+          <span className="text-2xl">📝</span>
+          <p className="text-3xl font-bold leading-none mt-3 text-amber-600">{draftReports}</p>
+          <p className="text-sm font-semibold text-gray-700 mt-1.5">Draft Reports</p>
+          <p className="text-xs text-gray-400 mt-0.5">Not yet finalised</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+          <span className="text-2xl">✅</span>
+          <p className="text-3xl font-bold leading-none mt-3 text-emerald-600">{finalisedReports}</p>
+          <p className="text-sm font-semibold text-gray-700 mt-1.5">Finalised Reports</p>
+          <p className="text-xs text-gray-400 mt-0.5">Professionally reviewed</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+          <span className="text-2xl">📨</span>
+          <p className="text-3xl font-bold leading-none mt-3 text-blue-600">{invited}</p>
+          <p className="text-sm font-semibold text-gray-700 mt-1.5">Clients Invited</p>
+          <p className="text-xs text-gray-400 mt-0.5">On PropertyOwl platform</p>
+        </div>
       </div>
 
       {/* Search */}

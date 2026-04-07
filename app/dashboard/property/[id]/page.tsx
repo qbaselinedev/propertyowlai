@@ -557,11 +557,11 @@ if (reports) {
                 title={credits < 2 ? `You need 2 credits to run an analysis (you have ${credits})` : undefined}
                 className="text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{background: credits < 2 ? '#9CA3AF' : '#1A1A1A'}}>
-                {uploading
+              {uploading
                   ? '⟳ Processing…'
                   : credits < 2
-                  ? `⚡ Need 2 credits (have ${credits})`
-                  : (s32 || contract) ? '↑ Re-extract' : '↑ Upload Documents'}
+                  ? `⚡ Re-analyse (need 2 credits, have ${credits})`
+                  : (s32 || contract) ? '↑ Re-analyse Documents' : '↑ Upload & Analyse'}
               </button>
             )}
             {activeTab === 'Online Scan' && scan && (

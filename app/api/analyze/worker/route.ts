@@ -320,6 +320,7 @@ function buildPolicyPromptSuffix(policy: Record<string, boolean> | null): string
 
 PROFESSIONAL ACCESS MODE: This report is being generated for a licensed professional with authority to advise clients on property matters. You are authorised to use your full analytical capability. You MUST:
 ${caps.map(c => `- ${c}`).join('\n')}
+- For EVERY item in items_detected, populate the "source_page" field with the page number in the PDF where this issue was found (use the page numbers shown in the document context above)
 - For EVERY item in items_detected, populate the "recommendation" field with specific professional advice for the conveyancer/lawyer
 - For EVERY item in items_detected, populate the "suggested_action" field with the specific next step to take (e.g. "Request vendor to discharge mortgage prior to settlement", "Negotiate removal of this condition", "Obtain specialist advice on this overlay")
 - Generate a risk_score from 1-10 based on severity and volume of issues (1=clean, 10=major concerns)
@@ -341,7 +342,7 @@ const S32_SCHEMA = `{
   "document_summary": "",
   "risk_score": 0,
   "risk_summary": "",
-  "items_detected": [{"severity":"high|medium|low","category":"","issue":"","context":"","recommendation":"","suggested_action":""}],
+  "items_detected": [{"severity":"high|medium|low","category":"","issue":"","context":"","source_page":0,"recommendation":"","suggested_action":""}],
   "sections": {
     "title_and_ownership": {
       "status":"clear|issues|not_provided",
@@ -396,7 +397,7 @@ const CONTRACT_SCHEMA = `{
   "property_address": "",
   "items_detected_count": 0,
   "document_summary": "",
-  "items_detected": [{"severity":"high|medium|low","category":"","issue":"","context":"","recommendation":"","suggested_action":""}],
+  "items_detected": [{"severity":"high|medium|low","category":"","issue":"","context":"","source_page":0,"recommendation":"","suggested_action":""}],
   "risk_score": 0,
   "risk_summary": "",
   "sections": {
@@ -827,6 +828,24 @@ export async function POST(request: NextRequest) {
     contractAnalysis.effective_user_type     = effectiveUserType
 
     await supabase.from('profiles').update({ credits: profile.credits - 2 }).eq('id', userId)
+
+    // Build a thumbnail map: { pageNumber: base64 } for pages referenced by risk items
+    // Stored compactly in raw_analysis so the professional view can show page previews
+    const referencedPages = new Set<number>()
+    ;[...(s32Analysis.items_detected ?? []), ...(contractAnalysis.items_detected ?? [])].forEach((item: any) => {
+      if (item.source_page && item.source_page > 0) referencedPages.add(item.source_page)
+    })
+    const pageThumbnails: Record<number, string> = {}
+    referencedPages.forEach(pg => {
+      // Use thumbnail (small) if available, otherwise skip
+      const thumb = thumbnails[pg - 1]  // thumbnails array is 0-indexed
+      if (thumb) pageThumbnails[pg] = thumb
+    })
+
+    if (Object.keys(pageThumbnails).length > 0) {
+      s32Analysis.page_thumbnails      = pageThumbnails
+      contractAnalysis.page_thumbnails = pageThumbnails
+    }
 
     await supabase.from('reports').insert([
       {

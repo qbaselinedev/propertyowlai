@@ -10,8 +10,13 @@ interface RiskItem {
   category: string
   issue: string
   context?: string
+  source_page?: number
   recommendation?: string
   suggested_action?: string
+}
+
+interface PageThumbnails {
+  [page: number]: string  // base64 JPEG thumbnails keyed by page number
 }
 
 interface ProReportProps {
@@ -21,6 +26,11 @@ interface ProReportProps {
   propertyAddress: string
   userType: 'conveyancer' | 'lawyer'
   onDisclaimerNotAcknowledged: () => void
+}
+
+// Merge page thumbnails from both reports
+function getPageThumbnails(s32: any, contract: any): PageThumbnails {
+  return { ...(s32?.page_thumbnails ?? {}), ...(contract?.page_thumbnails ?? {}) }
 }
 
 // ─── Severity colours ─────────────────────────────────────────────────────────
@@ -152,28 +162,70 @@ function FinaliseModal({
   )
 }
 
+// ─── Thumbnail lightbox ───────────────────────────────────────────────────────
+
+function ThumbnailLightbox({ page, src, onClose }: { page: number; src: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.85)' }} onClick={onClose}>
+      <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
+        <div className="bg-white rounded-xl overflow-hidden shadow-2xl">
+          <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800">
+            <p className="text-sm font-semibold text-white">📄 Page {page} — Source Document</p>
+            <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">×</button>
+          </div>
+          <img src={`data:image/jpeg;base64,${src}`} alt={`Page ${page}`} className="w-full" />
+          <div className="px-4 py-2 bg-gray-50 border-t border-gray-200">
+            <p className="text-xs text-gray-500">This is the document page where this risk item was identified.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Risk Card ─────────────────────────────────────────────────────────────────
 
-function RiskCard({ item, onChange, editMode }: {
+function RiskCard({ item, onChange, editMode, pageThumbnails, onShowPage }: {
   item: RiskItem
   onChange: (updated: RiskItem) => void
   editMode: boolean
+  pageThumbnails: PageThumbnails
+  onShowPage: (page: number) => void
 }) {
   const c = SEV[item.severity] ?? SEV.low
+  const hasThumb = item.source_page && pageThumbnails[item.source_page]
 
   return (
     <div className={`rounded-xl border ${c.border} ${c.bg} overflow-hidden`}>
       <div className={`h-1 ${c.strip}`} />
       <div className="p-4 space-y-3">
         {/* Header */}
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.badge}`}>{c.icon} {c.label}</span>
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            {editMode
-              ? <input value={item.category} onChange={e => onChange({ ...item, category: e.target.value })}
-                  className="border border-amber-300 rounded px-1.5 py-0.5 text-xs bg-amber-50 focus:outline-none w-32" />
-              : item.category}
-          </span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.badge}`}>{c.icon} {c.label}</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              {editMode
+                ? <input value={item.category} onChange={e => onChange({ ...item, category: e.target.value })}
+                    className="border border-amber-300 rounded px-1.5 py-0.5 text-xs bg-amber-50 focus:outline-none w-32" />
+                : item.category}
+            </span>
+          </div>
+          {/* Source page link */}
+          {item.source_page && item.source_page > 0 && (
+            <button
+              onClick={() => hasThumb && onShowPage(item.source_page!)}
+              className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border transition-colors flex-shrink-0 ${
+                hasThumb
+                  ? 'text-gray-600 border-gray-300 hover:bg-gray-100 cursor-pointer'
+                  : 'text-gray-400 border-gray-200 cursor-default'
+              }`}
+              title={hasThumb ? `View page ${item.source_page} of the document` : `Page ${item.source_page}`}
+            >
+              📄 Page {item.source_page}
+              {hasThumb && <span className="text-blue-500">↗</span>}
+            </button>
+          )}
         </div>
 
         {/* Issue */}
@@ -221,6 +273,8 @@ export default function ProfessionalReportView({
 
   const [s32, setS32]                   = useState<any>(initialS32)
   const [contract, setContract]         = useState<any>(initialContract)
+  const pageThumbnails                  = getPageThumbnails(initialS32, initialContract)
+  const [lightboxPage, setLightboxPage] = useState<number | null>(null)
   const [activeTab, setActiveTab]       = useState<'risk' | 'sections' | 'email'>('risk')
   const [filter, setFilter]             = useState<'all' | 'high' | 'medium' | 'low'>('all')
 
@@ -330,6 +384,15 @@ export default function ProfessionalReportView({
 
   return (
     <>
+      {/* ── Page thumbnail lightbox ── */}
+      {lightboxPage !== null && pageThumbnails[lightboxPage] && (
+        <ThumbnailLightbox
+          page={lightboxPage}
+          src={pageThumbnails[lightboxPage]}
+          onClose={() => setLightboxPage(null)}
+        />
+      )}
+
       {/* ── Finalise modal ── */}
       {showFinaliseModal && (
         <FinaliseModal
@@ -356,84 +419,71 @@ export default function ProfessionalReportView({
           )}
         </div>
 
-        {/* ── Action bar — Edit / Save / Finalise / Revise ── */}
-        <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-5 py-3 shadow-sm">
-          <div className="flex-1 min-w-0">
-            {editMode ? (
-              <p className="text-xs text-amber-700 font-semibold">
-                ✏️ Edit mode — click any field to update it. Save when done.
-              </p>
-            ) : finalised ? (
-              <p className="text-xs text-emerald-700 font-semibold">
-                ✓ This report has been finalised. Click Revise to make further changes.
-              </p>
-            ) : (
-              <p className="text-xs text-gray-500">
-                Click <strong>Edit</strong> to modify any content, then <strong>Finalise</strong> when your review is complete.
-              </p>
-            )}
+        {/* ── Combined tab bar + action buttons ── */}
+        <div className="flex items-center bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+
+          {/* Tabs */}
+          <div className="flex flex-1 border-r border-gray-200">
+            {[
+              { key: 'risk',     label: `Risk Analysis (${allItems.length})` },
+              { key: 'sections', label: 'Document Sections' },
+              { key: 'email',    label: '✉️ Client Email' },
+            ].map(tab => (
+              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
+                className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === tab.key ? 'border-[#E8001D] text-[#E8001D]' : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}>
+                {tab.label}
+              </button>
+            ))}
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {saveError && <span className="text-xs text-red-500 max-w-[200px] truncate">{saveError}</span>}
+          {/* Action buttons in tab bar */}
+          <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0">
+            {saveError && <span className="text-xs text-red-500 max-w-[160px] truncate">{saveError}</span>}
 
-            {/* Save — only visible in edit mode */}
+            {/* Save — edit mode only */}
             {editMode && (
               <button onClick={handleSave} disabled={saving}
-                className={`text-sm font-semibold px-4 py-2 rounded-lg border transition-all ${
+                className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
                   saved ? 'bg-emerald-500 text-white border-emerald-500' : 'border-gray-200 text-gray-700 hover:bg-gray-50'
                 }`}>
                 {saved ? '✓ Saved' : saving ? 'Saving…' : '💾 Save'}
               </button>
             )}
 
-            {/* Edit button — disabled when finalised */}
-            <button
-              onClick={() => setEditMode(true)}
-              disabled={editMode || finalised}
-              className={`text-sm font-semibold px-4 py-2 rounded-lg transition-all ${
+            {/* Edit */}
+            <button onClick={() => setEditMode(true)} disabled={editMode || finalised}
+              title={finalised ? 'Report is finalised — click Revise to edit' : 'Edit report content'}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${
                 editMode || finalised
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
-                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
-              }`}
-            >
+                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}>
               ✏️ Edit
             </button>
 
             {/* Finalise / Revise */}
             {!finalised ? (
-              <button
-                onClick={() => { if (editMode) { setEditMode(false) }; setShowFinaliseModal(true) }}
-                className="text-sm font-bold px-5 py-2 rounded-lg bg-[#E8001D] hover:bg-red-700 text-white transition-colors"
-              >
+              <button onClick={() => { if (editMode) setEditMode(false); setShowFinaliseModal(true) }}
+                className="text-xs font-bold px-4 py-1.5 rounded-lg bg-[#E8001D] hover:bg-red-700 text-white transition-colors">
                 Finalise
               </button>
             ) : (
-              <button
-                onClick={() => { setFinalised(false); setEditMode(true) }}
-                className="text-sm font-bold px-5 py-2 rounded-lg bg-gray-800 hover:bg-gray-900 text-white transition-colors"
-              >
+              <button onClick={() => { setFinalised(false); setEditMode(true) }}
+                className="text-xs font-bold px-4 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-900 text-white transition-colors">
                 Revise
               </button>
             )}
           </div>
         </div>
 
-        {/* ── Inner tabs ── */}
-        <div className="flex border-b border-gray-200 bg-white rounded-t-xl overflow-hidden">
-          {[
-            { key: 'risk',     label: `Risk Analysis (${allItems.length})` },
-            { key: 'sections', label: 'Document Sections' },
-            { key: 'email',    label: '✉️ Client Email' },
-          ].map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
-              className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap -mb-px ${
-                activeTab === tab.key ? 'border-[#E8001D] text-[#E8001D]' : 'border-transparent text-gray-500 hover:text-gray-800'
-              }`}>
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {/* Edit mode hint */}
+        {editMode && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+            <p className="text-xs text-amber-700 font-semibold">✏️ Edit mode active — modify any field below. Click Save to preserve changes, then Finalise when your review is complete.</p>
+          </div>
+        )}
 
         {/* ── Risk Analysis tab ── */}
         {activeTab === 'risk' && (
@@ -465,7 +515,7 @@ export default function ProfessionalReportView({
                 {filtered.map(item => {
                   const globalIdx = allItems.indexOf(item)
                   return (
-                    <RiskCard key={globalIdx} item={item} onChange={u => updateItem(globalIdx, u)} editMode={editMode} />
+                    <RiskCard key={globalIdx} item={item} onChange={u => updateItem(globalIdx, u)} editMode={editMode} pageThumbnails={pageThumbnails} onShowPage={setLightboxPage} />
                   )
                 })}
               </div>
