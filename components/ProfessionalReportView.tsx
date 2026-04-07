@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -23,649 +23,604 @@ interface ProReportProps {
   onDisclaimerNotAcknowledged: () => void
 }
 
-// ─── Colour maps ──────────────────────────────────────────────────────────────
+// ─── Severity colours ─────────────────────────────────────────────────────────
 
 const SEV = {
-  high:   { bg: 'bg-red-50',   border: 'border-red-300',   badge: 'bg-red-100 text-red-700',   text: 'text-red-800',   strip: 'bg-red-500',   icon: '🔴', label: 'HIGH' },
-  medium: { bg: 'bg-amber-50', border: 'border-amber-300', badge: 'bg-amber-100 text-amber-700', text: 'text-amber-800', strip: 'bg-amber-500', icon: '🟡', label: 'MEDIUM' },
-  low:    { bg: 'bg-blue-50',  border: 'border-blue-300',  badge: 'bg-blue-100 text-blue-700',  text: 'text-blue-800',  strip: 'bg-blue-400',  icon: '🔵', label: 'LOW' },
+  high:   { bg: 'bg-red-50',   border: 'border-red-200',   badge: 'bg-red-100 text-red-700',     text: 'text-red-800',   strip: 'bg-red-500',   icon: '🔴', label: 'HIGH' },
+  medium: { bg: 'bg-amber-50', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700', text: 'text-amber-800', strip: 'bg-amber-400', icon: '🟡', label: 'MEDIUM' },
+  low:    { bg: 'bg-blue-50',  border: 'border-blue-200',  badge: 'bg-blue-100 text-blue-700',   text: 'text-blue-800',  strip: 'bg-blue-400',  icon: '🔵', label: 'LOW' },
 } as const
 
-// ─── Editable field ───────────────────────────────────────────────────────────
+// ─── Editable field — respects global edit mode ───────────────────────────────
 
-function EditableField({ value, onChange, multiline = false, placeholder = '' }: {
+function EditableField({
+  value, onChange, multiline = false, placeholder = '', editMode
+}: {
   value: string
   onChange: (v: string) => void
   multiline?: boolean
   placeholder?: string
+  editMode: boolean
 }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
-
-  function commit() {
-    onChange(draft)
-    setEditing(false)
-  }
-
-  if (!editing) {
-    return (
-      <span
-        onClick={() => { setDraft(value); setEditing(true) }}
-        className="cursor-pointer hover:bg-yellow-50 hover:underline decoration-dashed decoration-yellow-400 underline-offset-2 rounded px-0.5 transition-colors group relative"
-        title="Click to edit"
-      >
-        {value || <span className="text-gray-300 italic">{placeholder || 'Click to add...'}</span>}
-        <span className="ml-1 opacity-0 group-hover:opacity-100 text-yellow-500 text-[10px]">✏️</span>
-      </span>
-    )
+  if (!editMode) {
+    return <span>{value || <span className="text-gray-400 italic">{placeholder}</span>}</span>
   }
 
   return multiline ? (
-    <span className="block">
-      <textarea
-        autoFocus
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Escape') setEditing(false) }}
-        className="w-full border border-yellow-400 rounded-lg px-2 py-1 text-sm bg-yellow-50 focus:outline-none resize-y min-h-[60px]"
-        rows={3}
-      />
-    </span>
+    <textarea
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={3}
+      className="w-full border border-amber-300 rounded-lg px-2 py-1.5 text-sm bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-y min-h-[60px]"
+    />
   ) : (
     <input
-      autoFocus
       type="text"
-      value={draft}
-      onChange={e => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false) }}
-      className="border border-yellow-400 rounded-lg px-2 py-0.5 text-sm bg-yellow-50 focus:outline-none w-full"
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full border border-amber-300 rounded-lg px-2 py-1 text-sm bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400"
     />
   )
 }
 
-// ─── Risk item card ───────────────────────────────────────────────────────────
+// ─── Finalise confirmation modal ──────────────────────────────────────────────
 
-function RiskCard({ item, index, onChange, isProfessional }: {
+function FinaliseModal({
+  userType, propertyAddress, onConfirm, onCancel
+}: {
+  userType: string
+  propertyAddress: string
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const [accepted, setAccepted] = useState(false)
+  const typeLabel = userType === 'lawyer' ? 'Lawyer' : 'Conveyancer'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+
+        {/* Header */}
+        <div className="bg-[#E8001D] px-6 py-5">
+          <h2 className="text-lg font-bold text-white">Professional Responsibility Declaration</h2>
+          <p className="text-red-200 text-sm mt-0.5">Required before finalising — {propertyAddress}</p>
+        </div>
+
+        <div className="p-6 space-y-4">
+
+          <p className="text-sm text-gray-700 leading-relaxed">
+            By finalising this review, you as the licensed <strong>{typeLabel}</strong> confirm that you have
+            independently reviewed and validated all findings, and that the content of this report
+            accurately reflects your professional assessment.
+          </p>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+            <p className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-2">You acknowledge that:</p>
+            {[
+              'The AI analysis generated by PropertyOwl was used solely as a productivity tool to assist your review — not as a substitute for professional judgment.',
+              'AI-generated analysis can be incomplete, incorrect, or misleading and must not be relied upon without independent verification.',
+              'You have reviewed all findings against the original source documents and applied your own professional expertise.',
+              'You take full professional responsibility for the content of this finalised report.',
+              'This report must not be presented to clients as AI-generated — it represents your professional opinion.',
+              'PropertyOwl AI and its operators accept no liability for decisions made based on this analysis.',
+            ].map((item, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-amber-500 flex-shrink-0 mt-0.5 text-sm">•</span>
+                <p className="text-xs text-amber-800 leading-relaxed">{item}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Checkbox */}
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <div
+              onClick={() => setAccepted(a => !a)}
+              className={`w-5 h-5 rounded border-2 flex-shrink-0 mt-0.5 flex items-center justify-center transition-all cursor-pointer ${
+                accepted ? 'bg-[#E8001D] border-[#E8001D]' : 'border-gray-300 group-hover:border-gray-500'
+              }`}
+            >
+              {accepted && <span className="text-white text-xs font-bold leading-none">✓</span>}
+            </div>
+            <span className="text-sm text-gray-700 leading-relaxed">
+              I, as a licensed {typeLabel}, confirm I have independently reviewed all findings,
+              take full professional responsibility for this report, and understand that the
+              AI analysis is a productivity aid only and may contain errors.
+            </span>
+          </label>
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={onConfirm}
+              disabled={!accepted}
+              className="flex-1 bg-[#E8001D] hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Finalise Report
+            </button>
+            <button
+              onClick={onCancel}
+              className="flex-1 border border-gray-200 text-gray-600 hover:text-gray-900 font-semibold py-2.5 rounded-xl text-sm transition-colors"
+            >
+              Cancel — Continue Editing
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Risk Card ─────────────────────────────────────────────────────────────────
+
+function RiskCard({ item, onChange, editMode }: {
   item: RiskItem
-  index: number
   onChange: (updated: RiskItem) => void
-  isProfessional: boolean
+  editMode: boolean
 }) {
   const c = SEV[item.severity] ?? SEV.low
 
   return (
     <div className={`rounded-xl border ${c.border} ${c.bg} overflow-hidden`}>
-      {/* Severity strip */}
       <div className={`h-1 ${c.strip}`} />
-
-      <div className="p-4">
-        {/* Header row */}
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${c.badge}`}>
-              {c.icon} {c.label}
-            </span>
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              {isProfessional
-                ? <EditableField value={item.category} onChange={v => onChange({ ...item, category: v })} placeholder="Category" />
-                : item.category}
-            </span>
-          </div>
+      <div className="p-4 space-y-3">
+        {/* Header */}
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.badge}`}>{c.icon} {c.label}</span>
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            {editMode
+              ? <input value={item.category} onChange={e => onChange({ ...item, category: e.target.value })}
+                  className="border border-amber-300 rounded px-1.5 py-0.5 text-xs bg-amber-50 focus:outline-none w-32" />
+              : item.category}
+          </span>
         </div>
 
         {/* Issue */}
-        <div className="mb-3">
+        <div>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Issue Identified</p>
           <p className={`text-sm font-bold ${c.text} leading-snug`}>
-            {isProfessional
-              ? <EditableField value={item.issue} onChange={v => onChange({ ...item, issue: v })} multiline placeholder="Describe the issue" />
-              : item.issue}
+            <EditableField value={item.issue} onChange={v => onChange({ ...item, issue: v })} multiline editMode={editMode} placeholder="Describe the issue" />
           </p>
         </div>
 
         {/* Context */}
-        {(item.context || isProfessional) && (
-          <div className="mb-3 bg-white/60 rounded-lg px-3 py-2">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Context from Document</p>
-            <p className="text-xs text-gray-700 leading-relaxed">
-              {isProfessional
-                ? <EditableField value={item.context ?? ''} onChange={v => onChange({ ...item, context: v })} multiline placeholder="Add context from document..." />
-                : item.context}
-            </p>
-          </div>
-        )}
-
-        {/* Recommendation — professionals only */}
-        {isProfessional && (
-          <div className="mb-3 bg-white rounded-lg border border-dashed border-gray-300 px-3 py-2">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">💡 AI Recommendation</p>
-            <p className="text-xs text-gray-800 leading-relaxed">
-              <EditableField value={item.recommendation ?? ''} onChange={v => onChange({ ...item, recommendation: v })} multiline placeholder="AI recommendation will appear here..." />
-            </p>
-          </div>
-        )}
-
-        {/* Suggested action — professionals only */}
-        {isProfessional && (
-          <div className="bg-white rounded-lg border border-dashed border-indigo-200 px-3 py-2">
-            <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">⚡ Suggested Action</p>
-            <p className="text-xs text-indigo-800 leading-relaxed">
-              <EditableField value={item.suggested_action ?? ''} onChange={v => onChange({ ...item, suggested_action: v })} multiline placeholder="What action should be taken..." />
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── Risk summary bar ─────────────────────────────────────────────────────────
-
-function RiskSummaryBar({ items, riskScore, riskSummary, isProfessional, onSummaryChange }: {
-  items: RiskItem[]
-  riskScore?: number
-  riskSummary?: string
-  isProfessional: boolean
-  onSummaryChange?: (v: string) => void
-}) {
-  const high   = items.filter(f => f.severity === 'high').length
-  const medium = items.filter(f => f.severity === 'medium').length
-  const low    = items.filter(f => f.severity === 'low').length
-
-  const scoreColor = !riskScore ? 'text-gray-400'
-    : riskScore >= 8 ? 'text-red-600'
-    : riskScore >= 5 ? 'text-amber-600'
-    : 'text-emerald-600'
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 mb-4">
-      <div className="flex items-center gap-6 flex-wrap">
-        {riskScore !== undefined && (
-          <div className="text-center">
-            <p className={`text-3xl font-black ${scoreColor}`}>{riskScore}<span className="text-sm text-gray-400">/10</span></p>
-            <p className="text-xs text-gray-500 mt-0.5">Risk Score</p>
-          </div>
-        )}
-        <div className="flex gap-4">
-          <div className="text-center">
-            <p className="text-2xl font-black text-red-600">{high}</p>
-            <p className="text-xs text-gray-500">High</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-black text-amber-600">{medium}</p>
-            <p className="text-xs text-gray-500">Medium</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-black text-blue-600">{low}</p>
-            <p className="text-xs text-gray-500">Low</p>
-          </div>
+        <div className="bg-white/70 rounded-lg px-3 py-2">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Context from Document</p>
+          <p className="text-xs text-gray-700 leading-relaxed">
+            <EditableField value={item.context ?? ''} onChange={v => onChange({ ...item, context: v })} multiline editMode={editMode} placeholder="Context from the document…" />
+          </p>
         </div>
-        {riskSummary && (
-          <div className="flex-1 min-w-[200px]">
-            <p className="text-xs text-gray-500 font-bold mb-1 uppercase tracking-wider">Risk Summary</p>
-            <p className="text-sm text-gray-700 leading-relaxed">
-              {isProfessional && onSummaryChange
-                ? <EditableField value={riskSummary} onChange={onSummaryChange} multiline />
-                : riskSummary}
-            </p>
-          </div>
-        )}
+
+        {/* Recommendation */}
+        <div className="bg-white rounded-lg border border-dashed border-gray-200 px-3 py-2">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">💡 Recommendation</p>
+          <p className="text-xs text-gray-800 leading-relaxed">
+            <EditableField value={item.recommendation ?? ''} onChange={v => onChange({ ...item, recommendation: v })} multiline editMode={editMode} placeholder="Professional recommendation…" />
+          </p>
+        </div>
+
+        {/* Suggested action */}
+        <div className="bg-indigo-50 rounded-lg border border-indigo-100 px-3 py-2">
+          <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">⚡ Suggested Action</p>
+          <p className="text-xs text-indigo-800 leading-relaxed">
+            <EditableField value={item.suggested_action ?? ''} onChange={v => onChange({ ...item, suggested_action: v })} multiline editMode={editMode} placeholder="Specific next step…" />
+          </p>
+        </div>
       </div>
     </div>
   )
 }
 
-// ─── Main professional view ───────────────────────────────────────────────────
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ProfessionalReportView({
-  s32: initialS32,
-  contract: initialContract,
-  reportIds,
-  propertyAddress,
-  userType,
+  s32: initialS32, contract: initialContract, reportIds, propertyAddress, userType,
 }: ProReportProps) {
   const supabase = createClient()
 
-  // Local editable state — starts from LLM output, user can edit
-  const [s32, setS32]           = useState<any>(initialS32)
-  const [contract, setContract] = useState<any>(initialContract)
-  const [activeTab, setActiveTab] = useState<'risk' | 'sections' | 'email'>('risk')
-  const [filter, setFilter]     = useState<'all' | 'high' | 'medium' | 'low'>('all')
-  const [saving, setSaving]     = useState(false)
-  const [saved, setSaved]       = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
-  const [genEmail, setGenEmail] = useState(false)
-  const [emailDraft, setEmailDraft] = useState<string>(
-    initialS32?.email_draft?.body ?? initialContract?.email_draft?.body ?? ''
-  )
-  const [emailSubject, setEmailSubject] = useState<string>(
-    initialS32?.email_draft?.subject ?? `Property Review — ${propertyAddress}`
-  )
-  const [copied, setCopied] = useState(false)
+  const [s32, setS32]                   = useState<any>(initialS32)
+  const [contract, setContract]         = useState<any>(initialContract)
+  const [activeTab, setActiveTab]       = useState<'risk' | 'sections' | 'email'>('risk')
+  const [filter, setFilter]             = useState<'all' | 'high' | 'medium' | 'low'>('all')
 
-  const typeLabel = userType === 'conveyancer' ? 'Conveyancer' : 'Lawyer'
+  // Edit / Finalise state
+  const [editMode, setEditMode]         = useState(false)
+  const [finalised, setFinalised]       = useState(false)
+  const [showFinaliseModal, setShowFinaliseModal] = useState(false)
 
-  // Merge items from both reports
-  const allItems: RiskItem[] = [
-    ...(s32?.items_detected ?? []),
-    ...(contract?.items_detected ?? []),
-  ]
+  // Save state
+  const [saving, setSaving]             = useState(false)
+  const [saved, setSaved]               = useState(false)
+  const [saveError, setSaveError]       = useState<string | null>(null)
 
+  // Email
+  const [emailSubject, setEmailSubject] = useState(initialS32?.email_draft?.subject ?? `Property Review — ${propertyAddress}`)
+  const [emailBody, setEmailBody]       = useState(initialS32?.email_draft?.body ?? '')
+  const [copied, setCopied]             = useState(false)
+
+  const typeLabel = userType === 'lawyer' ? 'Lawyer' : 'Conveyancer'
+
+  // All risk items merged
+  const allItems: RiskItem[] = [...(s32?.items_detected ?? []), ...(contract?.items_detected ?? [])]
+  const high   = allItems.filter(f => f.severity === 'high').length
+  const medium = allItems.filter(f => f.severity === 'medium').length
+  const low    = allItems.filter(f => f.severity === 'low').length
   const filtered = filter === 'all' ? allItems : allItems.filter(f => f.severity === filter)
 
-  // Update an item in S32 or contract by index
   function updateItem(globalIdx: number, updated: RiskItem) {
     const s32Count = (s32?.items_detected ?? []).length
     if (globalIdx < s32Count) {
-      const newItems = [...(s32.items_detected ?? [])]
-      newItems[globalIdx] = updated
-      setS32({ ...s32, items_detected: newItems })
+      const items = [...(s32.items_detected ?? [])]; items[globalIdx] = updated
+      setS32({ ...s32, items_detected: items })
     } else {
-      const localIdx = globalIdx - s32Count
-      const newItems = [...(contract.items_detected ?? [])]
-      newItems[localIdx] = updated
-      setContract({ ...contract, items_detected: newItems })
+      const items = [...(contract.items_detected ?? [])]; items[globalIdx - s32Count] = updated
+      setContract({ ...contract, items_detected: items })
     }
   }
 
-  // Save changes back to the reports table
   async function handleSave() {
-    setSaving(true)
-    setSaveError(null)
+    setSaving(true); setSaveError(null)
     const errors: string[] = []
-
     if (reportIds.s32Id && s32) {
-      const { error } = await supabase
-        .from('reports')
-        .update({
-          raw_analysis: { ...s32, _professional_edited: true, _edited_at: new Date().toISOString() },
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', reportIds.s32Id)
+      const { error } = await supabase.from('reports').update({
+        raw_analysis: { ...s32, _professional_edited: true, _edited_at: new Date().toISOString() },
+        updated_at: new Date().toISOString(),
+      }).eq('id', reportIds.s32Id)
       if (error) errors.push('S32: ' + error.message)
     }
-
     if (reportIds.contractId && contract) {
-      const { error } = await supabase
-        .from('reports')
-        .update({
-          raw_analysis: { ...contract, _professional_edited: true, _edited_at: new Date().toISOString() },
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', reportIds.contractId)
+      const { error } = await supabase.from('reports').update({
+        raw_analysis: { ...contract, _professional_edited: true, _edited_at: new Date().toISOString() },
+        updated_at: new Date().toISOString(),
+      }).eq('id', reportIds.contractId)
       if (error) errors.push('Contract: ' + error.message)
     }
-
     setSaving(false)
-    if (errors.length > 0) {
-      setSaveError(errors.join('. '))
-    } else {
-      setSaved(true)
-      setTimeout(() => setSaved(false), 3000)
-    }
+    if (errors.length > 0) { setSaveError(errors.join('. ')) }
+    else { setSaved(true); setTimeout(() => setSaved(false), 3000) }
   }
 
-  // Generate email from current state
-  function buildEmail(): string {
-    const high   = allItems.filter(f => f.severity === 'high')
-    const medium = allItems.filter(f => f.severity === 'medium')
-    const low    = allItems.filter(f => f.severity === 'low')
-
-    let body = `Dear [Client Name],\n\nI have completed my preliminary review of the property at ${propertyAddress}.\n\n`
-
-    if (high.length > 0) {
-      body += `HIGH PRIORITY ITEMS (${high.length})\n${'─'.repeat(40)}\n`
-      high.forEach((item, i) => {
-        body += `${i + 1}. ${item.issue}\n`
-        if (item.recommendation) body += `   → ${item.recommendation}\n`
-        if (item.suggested_action) body += `   Action: ${item.suggested_action}\n`
-        body += '\n'
-      })
+  async function handleFinaliseConfirmed() {
+    setShowFinaliseModal(false)
+    setEditMode(false)
+    setFinalised(true)
+    // Save with finalised flag
+    setSaving(true)
+    if (reportIds.s32Id && s32) {
+      await supabase.from('reports').update({
+        raw_analysis: { ...s32, _professional_finalised: true, _finalised_at: new Date().toISOString() },
+        updated_at: new Date().toISOString(),
+      }).eq('id', reportIds.s32Id)
     }
-
-    if (medium.length > 0) {
-      body += `ITEMS TO REVIEW (${medium.length})\n${'─'.repeat(40)}\n`
-      medium.forEach((item, i) => {
-        body += `${i + 1}. ${item.issue}\n`
-        if (item.recommendation) body += `   → ${item.recommendation}\n`
-        body += '\n'
-      })
+    if (reportIds.contractId && contract) {
+      await supabase.from('reports').update({
+        raw_analysis: { ...contract, _professional_finalised: true, _finalised_at: new Date().toISOString() },
+        updated_at: new Date().toISOString(),
+      }).eq('id', reportIds.contractId)
     }
+    setSaving(false)
+  }
 
-    if (low.length > 0) {
-      body += `NOTED ITEMS (${low.length})\n${'─'.repeat(40)}\n`
-      low.forEach((item, i) => {
-        body += `${i + 1}. ${item.issue}\n`
-      })
-      body += '\n'
+  function buildEmail() {
+    const h = allItems.filter(f => f.severity === 'high')
+    const m = allItems.filter(f => f.severity === 'medium')
+    const l = allItems.filter(f => f.severity === 'low')
+    let body = `Dear [Client Name],\n\nI have completed my review of the property at ${propertyAddress}.\n\n`
+    if (h.length > 0) {
+      body += `HIGH PRIORITY ITEMS (${h.length})\n${'─'.repeat(40)}\n`
+      h.forEach((item, i) => { body += `${i + 1}. ${item.issue}\n`; if (item.recommendation) body += `   → ${item.recommendation}\n`; body += '\n' })
     }
-
-    if (allItems.length === 0) {
-      body += 'No significant issues were identified in my preliminary review.\n\n'
+    if (m.length > 0) {
+      body += `ITEMS TO REVIEW (${m.length})\n${'─'.repeat(40)}\n`
+      m.forEach((item, i) => { body += `${i + 1}. ${item.issue}\n`; if (item.recommendation) body += `   → ${item.recommendation}\n`; body += '\n' })
     }
-
-    body += `Please note that this is a preliminary AI-assisted review. I will provide my full professional advice after completing my review of the original documents.\n\n`
-    body += `Please do not hesitate to contact me if you have any questions.\n\nKind regards,\n[Your Name]\n${typeLabel}`
-    body += `\n\n---\nThis summary has been prepared with the assistance of PropertyOwl AI and is for the recipient's information only. It does not constitute legal advice. All findings must be independently verified by a licensed ${typeLabel.toLowerCase()} before being acted upon.`
-
+    if (l.length > 0) {
+      body += `NOTED (${l.length})\n${'─'.repeat(40)}\n`
+      l.forEach((item, i) => { body += `${i + 1}. ${item.issue}\n` }); body += '\n'
+    }
+    body += `Please contact me if you have any questions.\n\nKind regards,\n[Your Name]\n${typeLabel}`
     return body
   }
 
   async function handleCopy() {
-    const text = `Subject: ${emailSubject}\n\n${emailDraft}`
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2500)
+    await navigator.clipboard.writeText(`Subject: ${emailSubject}\n\n${emailBody || buildEmail()}`)
+    setCopied(true); setTimeout(() => setCopied(false), 2500)
   }
 
-  const high   = allItems.filter(f => f.severity === 'high').length
-  const medium = allItems.filter(f => f.severity === 'medium').length
-  const low    = allItems.filter(f => f.severity === 'low').length
-
   return (
-    <div className="space-y-4">
+    <>
+      {/* ── Finalise modal ── */}
+      {showFinaliseModal && (
+        <FinaliseModal
+          userType={userType}
+          propertyAddress={propertyAddress}
+          onConfirm={handleFinaliseConfirmed}
+          onCancel={() => setShowFinaliseModal(false)}
+        />
+      )}
 
-      {/* ── Professional authority banner ── */}
-      <div className="bg-amber-50 border border-amber-300 rounded-xl px-5 py-3 flex items-start gap-3">
-        <span className="text-xl flex-shrink-0 mt-0.5">⚖️</span>
-        <div>
-          <p className="text-sm font-black text-amber-800">
-            {typeLabel} Validation Required
+      <div className="space-y-4">
+
+        {/* ── AI disclaimer banner — single line, above everything ── */}
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+          <span className="text-base flex-shrink-0">⚠️</span>
+          <p className="text-xs text-amber-800 leading-relaxed">
+            <strong>AI-Generated Analysis</strong> — This content was produced by an AI model and may contain errors, omissions or misinterpretations.
+            You are the authority on all findings. Validate against source documents before acting or advising clients.
           </p>
-          <p className="text-xs text-amber-700 leading-relaxed mt-0.5">
-            This AI analysis is a starting point for your professional review. You are the authority on all findings.
-            Edit any item by clicking on it — your changes are saved to this report.
-            Do not present this output directly to clients as legal advice.
-          </p>
-        </div>
-      </div>
-
-      {/* ── Risk summary ── */}
-      <RiskSummaryBar
-        items={allItems}
-        riskScore={s32?.risk_score ?? contract?.risk_score}
-        riskSummary={s32?.risk_summary ?? contract?.risk_summary}
-        isProfessional
-        onSummaryChange={v => setS32((prev: any) => ({ ...prev, risk_summary: v }))}
-      />
-
-      {/* ── Tabs ── */}
-      <div className="flex items-center border-b border-gray-200 bg-white rounded-t-xl overflow-hidden">
-        {[
-          { key: 'risk',     label: `Risk Analysis (${allItems.length})` },
-          { key: 'sections', label: 'Document Sections' },
-          { key: 'email',    label: '✉️ Client Email' },
-        ].map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key as any)}
-            className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap -mb-px ${
-              activeTab === tab.key
-                ? 'border-[#E8001D] text-[#E8001D]'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-
-        {/* Save button in tab bar */}
-        <div className="ml-auto px-4 flex items-center gap-2">
-          {saveError && <span className="text-xs text-red-500">{saveError}</span>}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className={`text-xs font-bold px-4 py-1.5 rounded-lg transition-all ${
-              saved
-                ? 'bg-emerald-500 text-white'
-                : 'bg-[#E8001D] hover:bg-red-700 text-white disabled:opacity-50'
-            }`}
-          >
-            {saved ? '✓ Saved' : saving ? 'Saving…' : '💾 Save Changes'}
-          </button>
-        </div>
-      </div>
-
-      {/* ── Tab: Risk Analysis ── */}
-      {activeTab === 'risk' && (
-        <div className="space-y-4">
-          {/* Filter buttons */}
-          <div className="flex gap-2 flex-wrap">
-            {[
-              { k: 'all',    label: `All (${allItems.length})`,       active: 'bg-gray-800 text-white' },
-              { k: 'high',   label: `🔴 High (${high})`,              active: 'bg-red-600 text-white' },
-              { k: 'medium', label: `🟡 Medium (${medium})`,          active: 'bg-amber-500 text-white' },
-              { k: 'low',    label: `🔵 Low (${low})`,                active: 'bg-blue-500 text-white' },
-            ].map(({ k, label, active }) => (
-              <button
-                key={k}
-                onClick={() => setFilter(k as any)}
-                className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
-                  filter === k
-                    ? active
-                    : 'bg-white border border-gray-200 text-gray-500 hover:text-gray-800'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {filtered.length === 0 ? (
-            <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-              <span className="text-3xl">🎉</span>
-              <p className="text-sm font-bold text-gray-700 mt-2">No items in this category</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filtered.map((item, localIdx) => {
-                // Find global index
-                const globalIdx = allItems.indexOf(item)
-                return (
-                  <RiskCard
-                    key={globalIdx}
-                    item={item}
-                    index={globalIdx}
-                    onChange={updated => updateItem(globalIdx, updated)}
-                    isProfessional
-                  />
-                )
-              })}
-            </div>
-          )}
-
-          {/* Questions to explore */}
-          {((s32?.questions_to_explore ?? []).length > 0 || (contract?.questions_to_explore ?? []).length > 0) && (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 mt-4">
-              <p className="text-xs font-black text-gray-600 uppercase tracking-wider mb-3">❓ Questions to Explore</p>
-              <div className="space-y-2">
-                {[...(s32?.questions_to_explore ?? []), ...(contract?.questions_to_explore ?? [])].map((q: string, i: number) => (
-                  <div key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                    <span className="text-gray-400 flex-shrink-0 mt-0.5">→</span>
-                    <span>{q}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {finalised && (
+            <span className="flex-shrink-0 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+              ✓ Finalised
+            </span>
           )}
         </div>
-      )}
 
-      {/* ── Tab: Document Sections ── */}
-      {activeTab === 'sections' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* S32 sections */}
-          {s32?.sections && Object.entries(s32.sections).map(([key, section]: [string, any]) => {
-            if (!section) return null
-            const statusColor = ({
-              clear: 'border-l-emerald-500 bg-emerald-50',
-              issues: 'border-l-red-500 bg-red-50',
-              issues_found: 'border-l-red-500 bg-red-50',
-              not_provided: 'border-l-gray-300 bg-gray-50',
-              not_applicable: 'border-l-gray-300 bg-gray-50',
-              incomplete: 'border-l-amber-400 bg-amber-50',
-            } as Record<string, string>)[section.status]?? 'border-l-gray-300 bg-gray-50'
-
-            const sectionLabel: Record<string, string> = {
-              title_and_ownership: '📋 Title & Ownership',
-              planning_and_zoning: '🗺️ Planning & Zoning',
-              easements_and_covenants: '⛓️ Easements & Covenants',
-              building_permits: '🏗️ Building Permits',
-              owners_corporation: '🏢 Owners Corporation',
-              outgoings: '💰 Outgoings',
-              vendor_disclosure: '📄 Vendor Disclosure',
-            }
-
-            return (
-              <div key={key} className={`rounded-xl border-l-4 ${statusColor} p-4`}>
-                <p className="text-sm font-black text-gray-800 mb-2">{sectionLabel[key] ?? key}</p>
-                {/* Key extracted fields */}
-                {section.council_rates && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Council rates:</span> {section.council_rates}</p>}
-                {section.council_name && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Council:</span> {section.council_name}</p>}
-                {section.water_charges && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Water charges:</span> {section.water_charges}</p>}
-                {section.zone && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Zone:</span> {section.zone}</p>}
-                {section.overlays?.length > 0 && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Overlays:</span> {section.overlays.join(', ')}</p>}
-                {section.annual_fee && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">OC annual fee:</span> {section.annual_fee}</p>}
-                {section.lot_plan && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Lot/Plan:</span> {section.lot_plan}</p>}
-                {section.volume_folio && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Volume/Folio:</span> {section.volume_folio}</p>}
-                {/* Summary */}
-                {section.summary && (
-                  <p className="text-xs text-gray-600 mt-2 leading-relaxed italic border-t border-gray-200 pt-2">
-                    <EditableField value={section.summary} onChange={v => setS32((prev: any) => ({
-                      ...prev,
-                      sections: { ...prev.sections, [key]: { ...section, summary: v } }
-                    }))} multiline />
-                  </p>
-                )}
-                {/* Findings */}
-                {section.findings?.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {section.findings.map((f: string, i: number) => (
-                      <p key={i} className="text-xs text-gray-700">• {f}</p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-
-          {/* Contract sections */}
-          {contract?.sections && Object.entries(contract.sections).map(([key, section]: [string, any]) => {
-            if (!section) return null
-            const statusColor = ({
-              clear: 'border-l-emerald-500 bg-emerald-50',
-              issues: 'border-l-red-500 bg-red-50',
-              not_provided: 'border-l-gray-300 bg-gray-50',
-              not_applicable: 'border-l-gray-300 bg-gray-50',
-              incomplete: 'border-l-amber-400 bg-amber-50',
-            } as Record<string, string>)[section.status] ?? 'border-l-gray-300 bg-gray-50'
-
-            const sectionLabel: Record<string, string> = {
-              price_and_deposit: '💵 Price & Deposit',
-              settlement: '📅 Settlement',
-              special_conditions: '📝 Special Conditions',
-              goods_and_chattels: '🛋️ Goods & Chattels',
-              cooling_off: '❄️ Cooling Off',
-              gst_and_tax: '🧾 GST & Tax',
-              penalty_and_risk: '⚠️ Penalty & Risk',
-            }
-
-            return (
-              <div key={key} className={`rounded-xl border-l-4 ${statusColor} p-4`}>
-                <p className="text-sm font-black text-gray-800 mb-2">{sectionLabel[key] ?? key}</p>
-                {section.purchase_price && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Purchase price:</span> {section.purchase_price}</p>}
-                {section.deposit_amount && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Deposit:</span> {section.deposit_amount}</p>}
-                {section.settlement_date && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Settlement:</span> {section.settlement_date}</p>}
-                {section.period && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Cooling off:</span> {section.period} {section.waived ? '(WAIVED)' : ''}</p>}
-                {section.penalty_interest_rate && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Penalty rate:</span> {section.penalty_interest_rate}</p>}
-                {section.conditions?.length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-xs font-semibold text-gray-700 mb-1">Special conditions:</p>
-                    {section.conditions.map((c: any, i: number) => (
-                      <div key={i} className="text-xs text-gray-600 mb-1 pl-2 border-l-2 border-gray-300">
-                        <span className={`font-bold ${c.complexity === 'requires_review' ? 'text-red-600' : c.complexity === 'non-standard' ? 'text-amber-600' : 'text-gray-600'}`}>
-                          {c.number ? `SC${c.number}:` : ''} {c.complexity?.toUpperCase()}
-                        </span>
-                        {' '}{c.summary}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {section.summary && (
-                  <p className="text-xs text-gray-600 mt-2 leading-relaxed italic border-t border-gray-200 pt-2">
-                    <EditableField value={section.summary} onChange={v => setContract((prev: any) => ({
-                      ...prev,
-                      sections: { ...prev.sections, [key]: { ...section, summary: v } }
-                    }))} multiline />
-                  </p>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* ── Tab: Client Email ── */}
-      {activeTab === 'email' && (
-        <div className="space-y-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-            <p className="text-xs font-bold text-amber-800 mb-1">Review before sending</p>
-            <p className="text-xs text-amber-700 leading-relaxed">
-              This draft is based on the AI analysis. Edit it to reflect your professional judgement before sending to your client.
-            </p>
+        {/* ── Action bar — Edit / Save / Finalise / Revise ── */}
+        <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-5 py-3 shadow-sm">
+          <div className="flex-1 min-w-0">
+            {editMode ? (
+              <p className="text-xs text-amber-700 font-semibold">
+                ✏️ Edit mode — click any field to update it. Save when done.
+              </p>
+            ) : finalised ? (
+              <p className="text-xs text-emerald-700 font-semibold">
+                ✓ This report has been finalised. Click Revise to make further changes.
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500">
+                Click <strong>Edit</strong> to modify any content, then <strong>Finalise</strong> when your review is complete.
+              </p>
+            )}
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase tracking-wide">Subject Line</label>
-            <input
-              type="text"
-              value={emailSubject}
-              onChange={e => setEmailSubject(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#E8001D]"
-            />
-          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {saveError && <span className="text-xs text-red-500 max-w-[200px] truncate">{saveError}</span>}
 
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Email Body</label>
-              <button
-                onClick={() => {
-                  setEmailDraft(buildEmail())
-                  setGenEmail(true)
-                }}
-                className="text-xs text-[#E8001D] font-bold hover:underline"
-              >
-                ↺ Regenerate from current analysis
+            {/* Save — only visible in edit mode */}
+            {editMode && (
+              <button onClick={handleSave} disabled={saving}
+                className={`text-sm font-semibold px-4 py-2 rounded-lg border transition-all ${
+                  saved ? 'bg-emerald-500 text-white border-emerald-500' : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                }`}>
+                {saved ? '✓ Saved' : saving ? 'Saving…' : '💾 Save'}
               </button>
-            </div>
-            <textarea
-              value={emailDraft || buildEmail()}
-              onChange={e => setEmailDraft(e.target.value)}
-              rows={16}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:border-[#E8001D] resize-y"
-            />
-          </div>
+            )}
 
-          <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
-            <p className="text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Disclaimer (always appended)</p>
-            <p className="text-xs text-gray-400 leading-relaxed font-mono">
-              This summary has been prepared with the assistance of PropertyOwl AI and is for professional reference only.
-              It does not constitute legal advice. All findings must be independently verified by a licensed {typeLabel.toLowerCase()} before being acted upon or communicated to clients.
-            </p>
-          </div>
+            {/* Edit button — disabled when finalised */}
+            <button
+              onClick={() => setEditMode(true)}
+              disabled={editMode || finalised}
+              className={`text-sm font-semibold px-4 py-2 rounded-lg transition-all ${
+                editMode || finalised
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+              }`}
+            >
+              ✏️ Edit
+            </button>
 
-          <button
-            onClick={handleCopy}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${
-              copied ? 'bg-emerald-500 text-white' : 'bg-[#E8001D] hover:bg-red-700 text-white'
-            }`}
-          >
-            {copied ? '✓ Copied to clipboard' : '📋 Copy full email'}
-          </button>
+            {/* Finalise / Revise */}
+            {!finalised ? (
+              <button
+                onClick={() => { if (editMode) { setEditMode(false) }; setShowFinaliseModal(true) }}
+                className="text-sm font-bold px-5 py-2 rounded-lg bg-[#E8001D] hover:bg-red-700 text-white transition-colors"
+              >
+                Finalise
+              </button>
+            ) : (
+              <button
+                onClick={() => { setFinalised(false); setEditMode(true) }}
+                className="text-sm font-bold px-5 py-2 rounded-lg bg-gray-800 hover:bg-gray-900 text-white transition-colors"
+              >
+                Revise
+              </button>
+            )}
+          </div>
         </div>
-      )}
-    </div>
+
+        {/* ── Inner tabs ── */}
+        <div className="flex border-b border-gray-200 bg-white rounded-t-xl overflow-hidden">
+          {[
+            { key: 'risk',     label: `Risk Analysis (${allItems.length})` },
+            { key: 'sections', label: 'Document Sections' },
+            { key: 'email',    label: '✉️ Client Email' },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
+              className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap -mb-px ${
+                activeTab === tab.key ? 'border-[#E8001D] text-[#E8001D]' : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Risk Analysis tab ── */}
+        {activeTab === 'risk' && (
+          <div className="space-y-4">
+            {/* Filter buttons */}
+            <div className="flex gap-2 flex-wrap">
+              {[
+                { k: 'all',    label: `All (${allItems.length})`, active: 'bg-gray-800 text-white' },
+                { k: 'high',   label: `🔴 High (${high})`,        active: 'bg-red-600 text-white' },
+                { k: 'medium', label: `🟡 Medium (${medium})`,    active: 'bg-amber-500 text-white' },
+                { k: 'low',    label: `🔵 Low (${low})`,          active: 'bg-blue-500 text-white' },
+              ].map(({ k, label, active }) => (
+                <button key={k} onClick={() => setFilter(k as any)}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
+                    filter === k ? active : 'bg-white border border-gray-200 text-gray-500 hover:text-gray-800'
+                  }`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {filtered.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+                <span className="text-3xl">🎉</span>
+                <p className="text-sm font-bold text-gray-700 mt-2">No items in this category</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filtered.map(item => {
+                  const globalIdx = allItems.indexOf(item)
+                  return (
+                    <RiskCard key={globalIdx} item={item} onChange={u => updateItem(globalIdx, u)} editMode={editMode} />
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Questions to explore */}
+            {((s32?.questions_to_explore ?? []).length > 0 || (contract?.questions_to_explore ?? []).length > 0) && (
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-3">❓ Questions to Explore</p>
+                <div className="space-y-2">
+                  {[...(s32?.questions_to_explore ?? []), ...(contract?.questions_to_explore ?? [])].map((q: string, i: number) => (
+                    <div key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                      <span className="text-gray-400 flex-shrink-0">→</span>
+                      {editMode
+                        ? <input value={q} onChange={e => {
+                            const arr = [...(s32?.questions_to_explore ?? [])]
+                            arr[i] = e.target.value
+                            setS32({ ...s32, questions_to_explore: arr })
+                          }} className="flex-1 border border-amber-300 rounded px-2 py-0.5 text-sm bg-amber-50 focus:outline-none" />
+                        : <span>{q}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Document Sections tab ── */}
+        {activeTab === 'sections' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* S32 sections */}
+            {s32?.sections && Object.entries(s32.sections).map(([key, section]: [string, any]) => {
+              if (!section) return null
+              const statusColor = ({
+                clear: 'border-l-emerald-500 bg-emerald-50',
+                issues: 'border-l-red-500 bg-red-50',
+                issues_found: 'border-l-red-500 bg-red-50',
+                not_provided: 'border-l-gray-300 bg-gray-50',
+                not_applicable: 'border-l-gray-300 bg-gray-50',
+                incomplete: 'border-l-amber-400 bg-amber-50',
+              } as Record<string, string>)[section.status] ?? 'border-l-gray-300 bg-gray-50'
+
+              const sectionLabel: Record<string, string> = {
+                title_and_ownership: '📋 Title & Ownership', planning_and_zoning: '🗺️ Planning & Zoning',
+                easements_and_covenants: '⛓️ Easements & Covenants', building_permits: '🏗️ Building Permits',
+                owners_corporation: '🏢 Owners Corporation', outgoings: '💰 Outgoings', vendor_disclosure: '📄 Vendor Disclosure',
+              }
+
+              return (
+                <div key={key} className={`rounded-xl border-l-4 ${statusColor} p-4`}>
+                  <p className="text-sm font-bold text-gray-800 mb-2">{sectionLabel[key] ?? key}</p>
+                  {section.council_rates && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Council rates:</span> {section.council_rates}</p>}
+                  {section.council_name  && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Council:</span> {section.council_name}</p>}
+                  {section.water_charges && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Water charges:</span> {section.water_charges}</p>}
+                  {section.zone          && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Zone:</span> {section.zone}</p>}
+                  {section.overlays?.length > 0 && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Overlays:</span> {section.overlays.join(', ')}</p>}
+                  {section.annual_fee    && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">OC annual fee:</span> {section.annual_fee}</p>}
+                  {section.lot_plan      && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Lot/Plan:</span> {section.lot_plan}</p>}
+                  {section.volume_folio  && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Volume/Folio:</span> {section.volume_folio}</p>}
+                  {section.summary && (
+                    <p className="text-xs text-gray-600 mt-2 leading-relaxed italic border-t border-black/10 pt-2">
+                      <EditableField value={section.summary} onChange={v => setS32((prev: any) => ({
+                        ...prev, sections: { ...prev.sections, [key]: { ...section, summary: v } }
+                      }))} multiline editMode={editMode} />
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+
+            {/* Contract sections */}
+            {contract?.sections && Object.entries(contract.sections).map(([key, section]: [string, any]) => {
+              if (!section) return null
+              const statusColor = ({
+                clear: 'border-l-emerald-500 bg-emerald-50',
+                issues: 'border-l-red-500 bg-red-50',
+                not_provided: 'border-l-gray-300 bg-gray-50',
+                not_applicable: 'border-l-gray-300 bg-gray-50',
+                incomplete: 'border-l-amber-400 bg-amber-50',
+              } as Record<string, string>)[section.status] ?? 'border-l-gray-300 bg-gray-50'
+
+              const sectionLabel: Record<string, string> = {
+                price_and_deposit: '💵 Price & Deposit', settlement: '📅 Settlement',
+                special_conditions: '📝 Special Conditions', goods_and_chattels: '🛋️ Goods & Chattels',
+                cooling_off: '❄️ Cooling Off', gst_and_tax: '🧾 GST & Tax', penalty_and_risk: '⚠️ Penalty & Risk',
+              }
+
+              return (
+                <div key={key} className={`rounded-xl border-l-4 ${statusColor} p-4`}>
+                  <p className="text-sm font-bold text-gray-800 mb-2">{sectionLabel[key] ?? key}</p>
+                  {section.purchase_price && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Purchase price:</span> {section.purchase_price}</p>}
+                  {section.deposit_amount && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Deposit:</span> {section.deposit_amount}</p>}
+                  {section.settlement_date && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Settlement:</span> {section.settlement_date}</p>}
+                  {section.period && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Cooling off:</span> {section.period}{section.waived ? ' (WAIVED)' : ''}</p>}
+                  {section.penalty_interest_rate && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Penalty rate:</span> {section.penalty_interest_rate}</p>}
+                  {section.conditions?.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {section.conditions.map((c: any, i: number) => (
+                        <div key={i} className="text-xs text-gray-600 pl-2 border-l-2 border-gray-300">
+                          <span className={`font-bold ${c.complexity === 'requires_review' ? 'text-red-600' : c.complexity === 'non-standard' ? 'text-amber-600' : 'text-gray-600'}`}>
+                            {c.number ? `SC${c.number}: ` : ''}{c.complexity?.toUpperCase()}
+                          </span> {c.summary}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {section.summary && (
+                    <p className="text-xs text-gray-600 mt-2 leading-relaxed italic border-t border-black/10 pt-2">
+                      <EditableField value={section.summary} onChange={v => setContract((prev: any) => ({
+                        ...prev, sections: { ...prev.sections, [key]: { ...section, summary: v } }
+                      }))} multiline editMode={editMode} />
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* ── Client Email tab ── */}
+        {activeTab === 'email' && (
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <p className="text-xs font-bold text-amber-800 mb-1">Review before sending</p>
+              <p className="text-xs text-amber-700 leading-relaxed">
+                This draft is based on the AI analysis. Edit it to reflect your professional judgement before sending to your client.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase tracking-wide">Subject Line</label>
+              <input type="text" value={emailSubject} onChange={e => setEmailSubject(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#E8001D]" />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Email Body</label>
+                <button onClick={() => setEmailBody(buildEmail())} className="text-xs text-[#E8001D] font-bold hover:underline">
+                  ↺ Regenerate from analysis
+                </button>
+              </div>
+              <textarea value={emailBody || buildEmail()} onChange={e => setEmailBody(e.target.value)}
+                rows={16}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:border-[#E8001D] resize-y" />
+            </div>
+
+            <button onClick={handleCopy}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${copied ? 'bg-emerald-500 text-white' : 'bg-[#E8001D] hover:bg-red-700 text-white'}`}>
+              {copied ? '✓ Copied to clipboard' : '📋 Copy full email'}
+            </button>
+          </div>
+        )}
+      </div>
+    </>
   )
 }

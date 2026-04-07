@@ -581,8 +581,8 @@ if (reports) {
           </div>
         </div>
 
-        {/* Row 2: checklist grid (inside Document Information tab, above sub-tabs) */}
-        {activeTab === 'Document Information' && (s32 || contract) && (
+        {/* Row 2: checklist grid — hide for professionals (they use ProfessionalReportView tabs) */}
+        {activeTab === 'Document Information' && (s32 || contract) && !['conveyancer', 'lawyer'].includes(userType) && (
           <div className="border-b border-gray-100 bg-white px-4 py-3">
             <ChecklistPanel s32={s32} contract={contract} onNavigate={(t: string) => {
               setContractSubTab(t)
@@ -590,8 +590,8 @@ if (reports) {
           </div>
         )}
 
-        {/* Row 3: contract sub-tabs */}
-        {activeTab === 'Document Information' && (s32 || contract) && (
+        {/* Row 3: contract sub-tabs — hide for professionals */}
+        {activeTab === 'Document Information' && (s32 || contract) && !['conveyancer', 'lawyer'].includes(userType) && (
           <div className="flex border-b border-gray-100 bg-white px-3">
             {CONTRACT_SUBTABS.map(sub => (
               <button key={sub} onClick={() => setContractSubTab(sub)}
