@@ -4,6 +4,7 @@ import Link from "next/link";
 import LogoutButton from "@/components/LogoutButton";
 import CreditsDisplay from "@/components/CreditsDisplay";
 import InactivityLogout from "@/components/InactivityLogout";
+import DashboardSidebar from "@/components/DashboardSidebar";
 
 export default async function DashboardLayout({
   children,
@@ -27,6 +28,8 @@ export default async function DashboardLayout({
   const isProfessional =
     ["conveyancer", "lawyer"].includes(profile?.user_type ?? "") &&
     profile?.conveyancer_verified === true;
+
+  const userType = profile?.user_type ?? "buyer";
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -70,71 +73,8 @@ export default async function DashboardLayout({
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* SIDEBAR */}
-        <aside className="w-56 bg-white border-r border-gray-200 flex-shrink-0 overflow-y-auto py-4">
-          <nav className="space-y-0.5 px-3">
-
-            {/* ── Main nav ── */}
-            <p className="text-xs font-bold text-gray-300 uppercase tracking-wider px-2 py-2">
-              Menu
-            </p>
-            {[
-              { href: "/dashboard",              icon: "⊞", label: "Dashboard" },
-              { href: "/dashboard/add-property", icon: "+", label: "Add Property" },
-            ].map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
-              >
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
-              </Link>
-            ))}
-
-            {/* ── CRM nav — professionals only ── */}
-            {isProfessional && (
-              <>
-                <p className="text-xs font-bold text-gray-300 uppercase tracking-wider px-2 py-2 mt-3">
-                  CRM
-                </p>
-                {[
-                  { href: "/dashboard/customers", icon: "👥", label: "Customers" },
-                  { href: "/dashboard/partners",  icon: "🤝", label: "Partners" },
-                ].map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
-                  >
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
-              </>
-            )}
-
-            {/* ── Account nav ── */}
-            <p className="text-xs font-bold text-gray-300 uppercase tracking-wider px-2 py-2 mt-3">
-              Account
-            </p>
-            {[
-              { href: "/dashboard/buy-credits", icon: "💳", label: "Buy Credits" },
-              { href: "/dashboard/settings",    icon: "⚙️", label: "Settings" },
-            ].map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
-              >
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
-              </Link>
-            ))}
-
-          </nav>
-        </aside>
-
+        {/* SIDEBAR — client component for dynamic nav */}
+        <DashboardSidebar isProfessional={isProfessional} userType={userType} />
         <main className="flex-1 overflow-y-auto p-8">{children}</main>
       </div>
     </div>

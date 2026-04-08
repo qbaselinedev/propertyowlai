@@ -17,6 +17,7 @@ export default function CustomersPage() {
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
   const [filter, setFilter]       = useState<'all' | 'active' | 'invited' | 'crm_only'>('all')
+  const [userType, setUserType]   = useState<string>('conveyancer')
 
   useEffect(() => { load() }, [])
 
@@ -24,6 +25,11 @@ export default function CustomersPage() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+
+    // Get user type for header
+    const { data: profile } = await supabase.from('profiles').select('user_type').eq('id', user.id).single()
+    if (profile?.user_type) setUserType(profile.user_type)
+
     const { data } = await supabase
       .from('crm_customers')
       .select('*, crm_customer_properties(id, validated_at)')
@@ -48,6 +54,10 @@ export default function CustomersPage() {
   const invited = customers.filter(c => c.invite_sent_at && !c.joined_at).length
   const crmOnly = customers.filter(c => !c.invite_sent_at && !c.joined_at).length
 
+  // Calculate totals for new stat boxes
+  const totalProperties = customers.reduce((sum, c) => sum + c.property_count, 0)
+  const pendingToFinalise = customers.reduce((sum, c) => sum + (c.property_count - c.validated_count), 0)
+
   const filtered = customers.filter(c => {
     const s = status(c)
     const matchesFilter = filter === 'all' || s.key === filter
@@ -55,29 +65,30 @@ export default function CustomersPage() {
     return matchesFilter && matchesSearch
   })
 
+  const typeLabel = userType === 'lawyer' ? 'Lawyer' : 'Conveyancer'
+
   return (
     <div className="max-w-5xl space-y-6 pb-10">
 
       {/* Page header */}
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs text-gray-400 uppercase tracking-widest font-semibold mb-1">CRM</p>
-          <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
-          <p className="text-sm text-gray-500 mt-1">Your private client list — invite them to view their property reports</p>
+          <p className="text-xs text-gray-400 uppercase tracking-widest font-semibold mb-1">{typeLabel} View · CRM</p>
+          <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
+          <p className="text-sm text-gray-500 mt-1">Your private customer list — invite them to view their property reports</p>
         </div>
         <Link href="/dashboard/customers/new"
           className="flex items-center gap-2 bg-[#E8001D] hover:bg-red-700 text-white px-5 py-2.5 rounded-lg font-semibold text-sm transition-colors shadow-sm">
-          + Add New Client
+          + Add New Customer
         </Link>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Stats — 3 boxes */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          { label: 'Total Clients',   value: total,   icon: '👥', color: 'text-gray-900' },
-          { label: 'Active',          value: active,  icon: '✅', color: 'text-emerald-600' },
-          { label: 'Invited',         value: invited, icon: '📨', color: 'text-blue-600' },
-          { label: 'Not Yet Invited', value: crmOnly, icon: '📋', color: 'text-gray-500' },
+          { label: 'Total Customers',     value: total,              icon: '👥', color: 'text-gray-900' },
+          { label: 'Properties Total',    value: totalProperties,    icon: '🏠', color: 'text-blue-600' },
+          { label: 'Pending to Finalise', value: pendingToFinalise,  icon: '⏳', color: 'text-amber-600' },
         ].map(card => (
           <div key={card.label} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
             <span className="text-xl">{card.icon}</span>
@@ -104,7 +115,7 @@ export default function CustomersPage() {
         </div>
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
-          <input type="text" placeholder="Search clients…" value={search} onChange={e => setSearch(e.target.value)}
+          <input type="text" placeholder="Search customers…" value={search} onChange={e => setSearch(e.target.value)}
             className="pl-8 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#E8001D] transition-all w-52" />
         </div>
       </div>
@@ -116,14 +127,16 @@ export default function CustomersPage() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
-          <p className="text-3xl mb-3">👥</p>
+          <p className="text-4xl mb-3">👥</p>
           <p className="text-base font-bold text-gray-700 mb-1">
-            {search || filter !== 'all' ? 'No clients match your filter' : 'No clients yet'}
+            {search ? 'No matches found' : 'No customers yet'}
           </p>
-          <p className="text-sm text-gray-400 mb-5">Add clients to start managing their property reviews</p>
-          {!search && filter === 'all' && (
-            <Link href="/dashboard/customers/new" className="inline-flex items-center gap-2 bg-[#E8001D] text-white font-semibold text-sm px-5 py-2.5 rounded-lg">
-              + Add First Client
+          <p className="text-sm text-gray-400 mb-4">
+            {search ? 'Try a different search' : 'Add your first customer to get started'}
+          </p>
+          {!search && (
+            <Link href="/dashboard/customers/new" className="inline-flex items-center gap-2 bg-[#E8001D] text-white px-5 py-2.5 rounded-lg font-semibold text-sm hover:bg-red-700 transition-colors">
+              + Add Customer
             </Link>
           )}
         </div>
@@ -132,55 +145,39 @@ export default function CustomersPage() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                {['Client', 'Contact', 'Properties', 'Status', 'Added', ''].map(h => (
+                {['Customer', 'Contact', 'Properties', 'Status', 'Added'].map(h => (
                   <th key={h} className="text-left px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((customer, i) => {
-                const s = status(customer)
+              {filtered.map((c, i) => {
+                const s = status(c)
                 return (
-                  <tr key={customer.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-red-50 border border-red-100 flex items-center justify-center text-[#E8001D] font-bold text-sm flex-shrink-0">
-                          {customer.full_name.charAt(0).toUpperCase()}
-                        </div>
-                        <p className="text-sm font-bold text-gray-900">{customer.full_name}</p>
-                      </div>
+                  <tr key={c.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
+                    <td className="px-5 py-3">
+                      <Link href={`/dashboard/customers/${c.id}`} className="group">
+                        <p className="text-sm font-semibold text-gray-900 group-hover:text-[#E8001D] transition-colors">{c.full_name}</p>
+                      </Link>
                     </td>
-                    <td className="px-5 py-3.5">
-                      <p className="text-xs text-gray-600">{customer.email}</p>
-                      {customer.phone && <p className="text-xs text-gray-400">{customer.phone}</p>}
+                    <td className="px-5 py-3">
+                      <p className="text-xs text-gray-500">{c.email}</p>
+                      {c.phone && <p className="text-xs text-gray-400">{c.phone}</p>}
                     </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="text-center">
-                          <p className="text-sm font-bold text-gray-900">{customer.property_count}</p>
-                          <p className="text-[10px] text-gray-400">Linked</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-sm font-bold text-emerald-600">{customer.validated_count}</p>
-                          <p className="text-[10px] text-gray-400">Validated</p>
-                        </div>
-                      </div>
+                    <td className="px-5 py-3">
+                      <span className="text-sm text-gray-700">{c.property_count}</span>
+                      {c.validated_count > 0 && (
+                        <span className="text-xs text-emerald-600 ml-1">({c.validated_count} finalised)</span>
+                      )}
                     </td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-5 py-3">
                       <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border ${s.bg} ${s.text}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />{s.label}
+                        <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                        {s.label}
                       </span>
                     </td>
-                    <td className="px-5 py-3.5">
-                      <p className="text-xs text-gray-400">
-                        {new Date(customer.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: '2-digit' })}
-                      </p>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <Link href={`/dashboard/customers/${customer.id}`}
-                        className="text-xs font-semibold text-[#E8001D] hover:underline">
-                        View →
-                      </Link>
+                    <td className="px-5 py-3">
+                      <span className="text-xs text-gray-400">{new Date(c.created_at).toLocaleDateString()}</span>
                     </td>
                   </tr>
                 )
