@@ -829,22 +829,58 @@ export async function POST(request: NextRequest) {
 
     await supabase.from('profiles').update({ credits: profile.credits - 2 }).eq('id', userId)
 
-    // Build a thumbnail map: { pageNumber: base64 } for pages referenced by risk items
-    // Stored compactly in raw_analysis so the professional view can show page previews
+    // Build high-quality page images for every page referenced by a risk item.
+    //
+    // Strategy:
+    // 1. Collect all page numbers the LLM tagged as source_page on risk items
+    // 2. For pages already fetched as full-res during analysis (fullResImages) — use those directly
+    // 3. For pages not yet fetched at full-res — fetch them now from Railway (text pages, etc.)
+    // 4. Fall back to thumbnail only if Railway fetch fails for a page
+    //
+    // This gives the conveyancer a proper readable document page, not a blurry thumbnail.
+
     const referencedPages = new Set<number>()
     ;[...(s32Analysis.items_detected ?? []), ...(contractAnalysis.items_detected ?? [])].forEach((item: any) => {
       if (item.source_page && item.source_page > 0) referencedPages.add(item.source_page)
     })
-    const pageThumbnails: Record<number, string> = {}
-    referencedPages.forEach(pg => {
-      // Use thumbnail (small) if available, otherwise skip
-      const thumb = thumbnails[pg - 1]  // thumbnails array is 0-indexed
-      if (thumb) pageThumbnails[pg] = thumb
-    })
 
-    if (Object.keys(pageThumbnails).length > 0) {
-      s32Analysis.page_thumbnails      = pageThumbnails
-      contractAnalysis.page_thumbnails = pageThumbnails
+    const pageImages: Record<number, string> = {}
+
+    if (referencedPages.size > 0) {
+      // Pages already available at full-res from the Claude analysis call
+      const alreadyFullRes = new Set(Object.keys(fullResImages).map(Number))
+
+      // Pages we still need to fetch at full-res (text pages, etc.)
+      const needFetch = [...referencedPages].filter(pg => !alreadyFullRes.has(pg))
+
+      // Use existing full-res images immediately
+      referencedPages.forEach(pg => {
+        if (fullResImages[pg]) pageImages[pg] = fullResImages[pg]
+      })
+
+      // Fetch remaining pages at full-res from Railway
+      if (needFetch.length > 0) {
+        console.log(`[PropertyOwl Worker] Fetching ${needFetch.length} risk pages at full-res for professional view: pages ${needFetch.join(', ')}`)
+        try {
+          const freshFullRes = await renderFullResPages(pdfBlob, needFetch)
+          Object.entries(freshFullRes).forEach(([pg, b64]) => {
+            pageImages[Number(pg)] = b64 as string
+          })
+        } catch (err: any) {
+          console.warn('[PropertyOwl Worker] Full-res fetch for risk pages failed, falling back to thumbnails:', err.message)
+          // Fall back to thumbnails for pages we couldn't fetch at full-res
+          needFetch.forEach(pg => {
+            const thumb = thumbnails[pg - 1]  // thumbnails are 0-indexed
+            if (thumb && !pageImages[pg]) pageImages[pg] = thumb
+          })
+        }
+      }
+
+      if (Object.keys(pageImages).length > 0) {
+        s32Analysis.page_thumbnails      = pageImages
+        contractAnalysis.page_thumbnails = pageImages
+        console.log(`[PropertyOwl Worker] Stored high-res page images for pages: ${Object.keys(pageImages).join(', ')}`)
+      }
     }
 
     await supabase.from('reports').insert([
