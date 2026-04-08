@@ -851,7 +851,7 @@ export async function POST(request: NextRequest) {
       const alreadyFullRes = new Set(Object.keys(fullResImages).map(Number))
 
       // Pages we still need to fetch at full-res (text pages, etc.)
-      const needFetch = [...referencedPages].filter(pg => !alreadyFullRes.has(pg))
+      const needFetch = Array.from(referencedPages).filter(pg => !alreadyFullRes.has(pg))
 
       // Use existing full-res images immediately
       referencedPages.forEach(pg => {

@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const pagesList = [...referencedPages].sort((a, b) => a - b)
+    const pagesList = Array.from(referencedPages).sort((a, b) => a - b)
     console.log(`[backfill-page-images] Property ${propertyId}: fetching pages ${pagesList.join(', ')} at full-res`)
 
     // ── Download the original PDF from Supabase Storage ────────────────────────
