@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -13,253 +13,183 @@ interface RiskItem {
   source_page?: number
   recommendation?: string
   suggested_action?: string
+  include_in_email?: boolean
 }
 
-interface PageThumbnails {
-  [page: number]: string  // base64 JPEG thumbnails keyed by page number
+interface Task {
+  id?: string
+  title: string
+  description: string
+  priority: 'high' | 'medium' | 'low'
+  status: 'pending' | 'in_progress' | 'completed'
+  due_date: string
+  linked_risk_index?: number
 }
+
+interface PageThumbnails { [page: number]: string }
 
 interface ProReportProps {
   s32: any
   contract: any
   reportIds: { s32Id?: string; contractId?: string }
   propertyAddress: string
+  propertyId?: string
   userType: 'conveyancer' | 'lawyer'
-  onDisclaimerNotAcknowledged: () => void
+  onDisclaimerNotAcknowledged?: () => void
 }
 
-// Merge page thumbnails from both reports
 function getPageThumbnails(s32: any, contract: any): PageThumbnails {
   return { ...(s32?.page_thumbnails ?? {}), ...(contract?.page_thumbnails ?? {}) }
 }
 
-// ─── Severity colours ─────────────────────────────────────────────────────────
-
 const SEV = {
-  high:   { bg: 'bg-red-50',   border: 'border-red-200',   badge: 'bg-red-100 text-red-700',     text: 'text-red-800',   strip: 'bg-red-500',   icon: '🔴', label: 'HIGH' },
-  medium: { bg: 'bg-amber-50', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700', text: 'text-amber-800', strip: 'bg-amber-400', icon: '🟡', label: 'MEDIUM' },
-  low:    { bg: 'bg-blue-50',  border: 'border-blue-200',  badge: 'bg-blue-100 text-blue-700',   text: 'text-blue-800',  strip: 'bg-blue-400',  icon: '🔵', label: 'LOW' },
+  high:   { bg: 'bg-red-50/60',   border: 'border-red-100', dot: 'bg-red-500',   text: 'text-red-700',   label: 'HIGH',   badgeBg: 'bg-red-100' },
+  medium: { bg: 'bg-amber-50/60', border: 'border-amber-100', dot: 'bg-amber-500', text: 'text-amber-700', label: 'MEDIUM', badgeBg: 'bg-amber-100' },
+  low:    { bg: 'bg-sky-50/60',   border: 'border-sky-100',  dot: 'bg-sky-500',   text: 'text-sky-700',   label: 'LOW',    badgeBg: 'bg-sky-100' },
 } as const
 
-// ─── Editable field — respects global edit mode ───────────────────────────────
-
-function EditableField({
-  value, onChange, multiline = false, placeholder = '', editMode
-}: {
-  value: string
-  onChange: (v: string) => void
-  multiline?: boolean
-  placeholder?: string
-  editMode: boolean
-}) {
-  if (!editMode) {
-    return <span>{value || <span className="text-gray-400 italic">{placeholder}</span>}</span>
-  }
-
-  return multiline ? (
-    <textarea
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
-      rows={3}
-      className="w-full border border-amber-300 rounded-lg px-2 py-1.5 text-sm bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-y min-h-[60px]"
-    />
-  ) : (
-    <input
-      type="text"
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full border border-amber-300 rounded-lg px-2 py-1 text-sm bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400"
-    />
-  )
-}
-
-// ─── Finalise confirmation modal ──────────────────────────────────────────────
-
-function FinaliseModal({
-  userType, propertyAddress, onConfirm, onCancel
-}: {
-  userType: string
-  propertyAddress: string
-  onConfirm: () => void
-  onCancel: () => void
-}) {
-  const [accepted, setAccepted] = useState(false)
-  const typeLabel = userType === 'lawyer' ? 'Lawyer' : 'Conveyancer'
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-
-        {/* Header */}
-        <div className="bg-[#E8001D] px-6 py-5">
-          <h2 className="text-lg font-bold text-white">Professional Responsibility Declaration</h2>
-          <p className="text-red-200 text-sm mt-0.5">Required before finalising — {propertyAddress}</p>
-        </div>
-
-        <div className="p-6 space-y-4">
-
-          <p className="text-sm text-gray-700 leading-relaxed">
-            By finalising this review, you as the licensed <strong>{typeLabel}</strong> confirm that you have
-            independently reviewed and validated all findings, and that the content of this report
-            accurately reflects your professional assessment.
-          </p>
-
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
-            <p className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-2">You acknowledge that:</p>
-            {[
-              'The AI analysis generated by PropertyOwl was used solely as a productivity tool to assist your review — not as a substitute for professional judgment.',
-              'AI-generated analysis can be incomplete, incorrect, or misleading and must not be relied upon without independent verification.',
-              'You have reviewed all findings against the original source documents and applied your own professional expertise.',
-              'You take full professional responsibility for the content of this finalised report.',
-              'This report must not be presented to clients as AI-generated — it represents your professional opinion.',
-              'PropertyOwl AI and its operators accept no liability for decisions made based on this analysis.',
-            ].map((item, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <span className="text-amber-500 flex-shrink-0 mt-0.5 text-sm">•</span>
-                <p className="text-xs text-amber-800 leading-relaxed">{item}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Checkbox */}
-          <label className="flex items-start gap-3 cursor-pointer group">
-            <div
-              onClick={() => setAccepted(a => !a)}
-              className={`w-5 h-5 rounded border-2 flex-shrink-0 mt-0.5 flex items-center justify-center transition-all cursor-pointer ${
-                accepted ? 'bg-[#E8001D] border-[#E8001D]' : 'border-gray-300 group-hover:border-gray-500'
-              }`}
-            >
-              {accepted && <span className="text-white text-xs font-bold leading-none">✓</span>}
-            </div>
-            <span className="text-sm text-gray-700 leading-relaxed">
-              I, as a licensed {typeLabel}, confirm I have independently reviewed all findings,
-              take full professional responsibility for this report, and understand that the
-              AI analysis is a productivity aid only and may contain errors.
-            </span>
-          </label>
-
-          {/* Actions */}
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={onConfirm}
-              disabled={!accepted}
-              className="flex-1 bg-[#E8001D] hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Finalise Report
-            </button>
-            <button
-              onClick={onCancel}
-              className="flex-1 border border-gray-200 text-gray-600 hover:text-gray-900 font-semibold py-2.5 rounded-xl text-sm transition-colors"
-            >
-              Cancel — Continue Editing
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Thumbnail lightbox ───────────────────────────────────────────────────────
+// ─── Thumbnail Lightbox ───────────────────────────────────────────────────────
 
 function ThumbnailLightbox({ page, src, onClose }: { page: number; src: string; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.85)' }} onClick={onClose}>
-      <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
-        <div className="bg-white rounded-xl overflow-hidden shadow-2xl">
-          <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800">
-            <p className="text-sm font-semibold text-white">📄 Page {page} — Source Document</p>
-            <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">×</button>
-          </div>
-          <img src={`data:image/jpeg;base64,${src}`} alt={`Page ${page}`} className="w-full" />
-          <div className="px-4 py-2 bg-gray-50 border-t border-gray-200">
-            <p className="text-xs text-gray-500">This is the document page where this risk item was identified.</p>
-          </div>
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="relative max-w-3xl max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
+          <span className="text-xs font-bold text-gray-600">Page {page}</span>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-800 text-lg">×</button>
+        </div>
+        <div className="overflow-auto max-h-[80vh] p-2">
+          <img src={`data:image/jpeg;base64,${src}`} alt={`Page ${page}`} className="w-full rounded" />
         </div>
       </div>
     </div>
   )
 }
 
-// ─── Risk Card ─────────────────────────────────────────────────────────────────
+// ─── Finalise Modal ───────────────────────────────────────────────────────────
 
-function RiskCard({ item, onChange, editMode, pageThumbnails, onShowPage }: {
-  item: RiskItem
-  onChange: (updated: RiskItem) => void
-  editMode: boolean
-  pageThumbnails: PageThumbnails
-  onShowPage: (page: number) => void
-}) {
-  const c = SEV[item.severity] ?? SEV.low
-  const hasThumb = item.source_page && pageThumbnails[item.source_page]
-
+function FinaliseModal({ userType, propertyAddress, onConfirm, onCancel }: { userType: string; propertyAddress: string; onConfirm: () => void; onCancel: () => void }) {
+  const [accepted, setAccepted] = useState(false)
+  const typeLabel = userType === 'lawyer' ? 'Lawyer' : 'Conveyancer'
   return (
-    <div className={`rounded-xl border ${c.border} ${c.bg} overflow-hidden`}>
-      <div className={`h-1 ${c.strip}`} />
-      <div className="p-4 space-y-3">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.badge}`}>{c.icon} {c.label}</span>
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              {editMode
-                ? <input value={item.category} onChange={e => onChange({ ...item, category: e.target.value })}
-                    className="border border-amber-300 rounded px-1.5 py-0.5 text-xs bg-amber-50 focus:outline-none w-32" />
-                : item.category}
-            </span>
-          </div>
-          {/* Source page link */}
-          {item.source_page && item.source_page > 0 && (
-            <button
-              onClick={() => hasThumb && onShowPage(item.source_page!)}
-              className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border transition-colors flex-shrink-0 ${
-                hasThumb
-                  ? 'text-gray-600 border-gray-300 hover:bg-gray-100 cursor-pointer'
-                  : 'text-gray-400 border-gray-200 cursor-default'
-              }`}
-              title={hasThumb ? `View page ${item.source_page} of the document` : `Page ${item.source_page}`}
-            >
-              📄 Page {item.source_page}
-              {hasThumb && <span className="text-blue-500">↗</span>}
-            </button>
-          )}
-        </div>
-
-        {/* Issue */}
-        <div>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Issue Identified</p>
-          <p className={`text-sm font-bold ${c.text} leading-snug`}>
-            <EditableField value={item.issue} onChange={v => onChange({ ...item, issue: v })} multiline editMode={editMode} placeholder="Describe the issue" />
-          </p>
-        </div>
-
-        {/* Context */}
-        <div className="bg-white/70 rounded-lg px-3 py-2">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Context from Document</p>
-          <p className="text-xs text-gray-700 leading-relaxed">
-            <EditableField value={item.context ?? ''} onChange={v => onChange({ ...item, context: v })} multiline editMode={editMode} placeholder="Context from the document…" />
-          </p>
-        </div>
-
-        {/* Recommendation */}
-        <div className="bg-white rounded-lg border border-dashed border-gray-200 px-3 py-2">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">💡 Recommendation</p>
-          <p className="text-xs text-gray-800 leading-relaxed">
-            <EditableField value={item.recommendation ?? ''} onChange={v => onChange({ ...item, recommendation: v })} multiline editMode={editMode} placeholder="Professional recommendation…" />
-          </p>
-        </div>
-
-        {/* Suggested action */}
-        <div className="bg-indigo-50 rounded-lg border border-indigo-100 px-3 py-2">
-          <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">⚡ Suggested Action</p>
-          <p className="text-xs text-indigo-800 leading-relaxed">
-            <EditableField value={item.suggested_action ?? ''} onChange={v => onChange({ ...item, suggested_action: v })} multiline editMode={editMode} placeholder="Specific next step…" />
-          </p>
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6" onClick={onCancel}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-gray-900 mb-3">Finalise Review</h3>
+        <p className="text-sm text-gray-600 mb-4 leading-relaxed">You are finalising the property review for <strong>{propertyAddress}</strong>. This marks the analysis as professionally reviewed by you as a {typeLabel}.</p>
+        <label className="flex items-start gap-2.5 cursor-pointer mb-5">
+          <input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-0.5 w-4 h-4 rounded border-gray-300 text-[#E8001D] focus:ring-[#E8001D]" />
+          <span className="text-xs text-gray-600 leading-relaxed">I confirm I have reviewed the AI-generated analysis, made any necessary corrections, and this report reflects my professional assessment.</span>
+        </label>
+        <div className="flex gap-3">
+          <button onClick={onConfirm} disabled={!accepted} className="flex-1 bg-[#E8001D] hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm disabled:opacity-40 transition-colors">Confirm Finalise</button>
+          <button onClick={onCancel} className="flex-1 border border-gray-200 text-gray-600 font-semibold py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors">Cancel</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Create Task Slide-in Panel ───────────────────────────────────────────────
+
+function CreateTaskPanel({ item, itemIndex, propertyId, onClose, onCreated }: {
+  item?: RiskItem; itemIndex?: number; propertyId?: string; onClose: () => void; onCreated: (task: Task) => void
+}) {
+  const supabase = createClient()
+  const [form, setForm] = useState<Task>({
+    title: item?.issue ?? '',
+    description: item?.recommendation ?? '',
+    priority: item?.severity ?? 'medium',
+    status: 'pending',
+    due_date: '',
+    linked_risk_index: itemIndex,
+  })
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    if (!form.title.trim()) return
+    setSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { data, error } = await supabase.from('crm_tasks').insert({
+      conveyancer_id: user.id,
+      property_id: propertyId || null,
+      title: form.title.trim(),
+      description: form.description.trim() || null,
+      priority: form.priority,
+      status: form.status,
+      due_date: form.due_date || null,
+      linked_risk_item: item ? { index: itemIndex, severity: item.severity, category: item.category, issue: item.issue } : null,
+    }).select().single()
+
+    setSaving(false)
+    if (!error && data) {
+      onCreated(data)
+      onClose()
+    }
+  }
+
+  const priColors = { high: 'border-red-300 bg-red-50 text-red-700', medium: 'border-amber-300 bg-amber-50 text-amber-700', low: 'border-sky-300 bg-sky-50 text-sky-700' }
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+      <div className="relative w-full max-w-md bg-white shadow-2xl h-full overflow-y-auto animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between z-10">
+          <h3 className="text-base font-bold text-gray-900">Create Task</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-800 text-xl leading-none">×</button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {item && (
+            <div className={`rounded-lg border px-3 py-2.5 ${SEV[item.severity].bg} ${SEV[item.severity].border}`}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Linked Risk Item</p>
+              <p className={`text-xs font-semibold ${SEV[item.severity].text}`}>{item.issue}</p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Task Title *</label>
+            <input type="text" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#E8001D] focus:ring-2 focus:ring-[#E8001D]/10" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Description</label>
+            <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              rows={4} className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#E8001D] resize-none" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Priority</label>
+              <div className="flex gap-1.5">
+                {(['high', 'medium', 'low'] as const).map(p => (
+                  <button key={p} onClick={() => setForm(f => ({ ...f, priority: p }))}
+                    className={`flex-1 text-xs font-bold py-2 rounded-lg border transition-all ${form.priority === p ? priColors[p] : 'border-gray-200 bg-white text-gray-400'}`}>
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Due Date</label>
+              <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#E8001D]" />
+            </div>
+          </div>
+
+          <button onClick={handleSave} disabled={saving || !form.title.trim()}
+            className="w-full bg-[#E8001D] hover:bg-red-700 text-white font-bold py-3 rounded-xl text-sm transition-colors disabled:opacity-40 mt-2">
+            {saving ? 'Creating…' : '+ Create Task'}
+          </button>
+        </div>
+      </div>
+
+      <style jsx>{`
+        @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        .animate-slide-in { animation: slideIn 0.25s ease-out; }
+      `}</style>
     </div>
   )
 }
@@ -267,40 +197,53 @@ function RiskCard({ item, onChange, editMode, pageThumbnails, onShowPage }: {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ProfessionalReportView({
-  s32: initialS32, contract: initialContract, reportIds, propertyAddress, userType,
+  s32: initialS32, contract: initialContract, reportIds, propertyAddress, propertyId, userType,
 }: ProReportProps) {
   const supabase = createClient()
 
-  const [s32, setS32]                   = useState<any>(initialS32)
-  const [contract, setContract]         = useState<any>(initialContract)
-  const pageThumbnails                  = getPageThumbnails(initialS32, initialContract)
+  const [s32, setS32] = useState<any>(initialS32)
+  const [contract, setContract] = useState<any>(initialContract)
+  const pageThumbnails = getPageThumbnails(initialS32, initialContract)
   const [lightboxPage, setLightboxPage] = useState<number | null>(null)
-  const [activeTab, setActiveTab]       = useState<'risk' | 'sections' | 'email'>('risk')
-  const [filter, setFilter]             = useState<'all' | 'high' | 'medium' | 'low'>('all')
+  const [activeTab, setActiveTab] = useState<'risk' | 'sections' | 'tasks' | 'email'>('risk')
+  const [filter, setFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all')
 
-  // Edit / Finalise state
-  const [editMode, setEditMode]         = useState(false)
-  const [finalised, setFinalised]       = useState(false)
+  // Per-item edit
+  const [editingIdx, setEditingIdx] = useState<number | null>(null)
+  const [hasPendingEdits, setHasPendingEdits] = useState(false)
+
+  // Finalise
+  const [finalised, setFinalised] = useState(false)
   const [showFinaliseModal, setShowFinaliseModal] = useState(false)
 
-  // Save state
-  const [saving, setSaving]             = useState(false)
-  const [saved, setSaved]               = useState(false)
-  const [saveError, setSaveError]       = useState<string | null>(null)
+  // Save
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // Email
   const [emailSubject, setEmailSubject] = useState(initialS32?.email_draft?.subject ?? `Property Review — ${propertyAddress}`)
-  const [emailBody, setEmailBody]       = useState(initialS32?.email_draft?.body ?? '')
-  const [copied, setCopied]             = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // Tasks
+  const [showTaskPanel, setShowTaskPanel] = useState(false)
+  const [taskPanelItem, setTaskPanelItem] = useState<{ item: RiskItem; index: number } | undefined>()
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [taskFilter, setTaskFilter] = useState<'all' | 'pending' | 'completed' | 'high'>('all')
 
   const typeLabel = userType === 'lawyer' ? 'Lawyer' : 'Conveyancer'
 
   // All risk items merged
   const allItems: RiskItem[] = [...(s32?.items_detected ?? []), ...(contract?.items_detected ?? [])]
-  const high   = allItems.filter(f => f.severity === 'high').length
+  const high = allItems.filter(f => f.severity === 'high').length
   const medium = allItems.filter(f => f.severity === 'medium').length
-  const low    = allItems.filter(f => f.severity === 'low').length
+  const low = allItems.filter(f => f.severity === 'low').length
   const filtered = filter === 'all' ? allItems : allItems.filter(f => f.severity === filter)
+
+  // Items included in email (default: all high + medium)
+  const emailItems = useMemo(() =>
+    allItems.filter(item => item.include_in_email !== false && (item.severity === 'high' || item.severity === 'medium' || item.include_in_email === true))
+  , [allItems])
 
   function updateItem(globalIdx: number, updated: RiskItem) {
     const s32Count = (s32?.items_detected ?? []).length
@@ -311,6 +254,13 @@ export default function ProfessionalReportView({
       const items = [...(contract.items_detected ?? [])]; items[globalIdx - s32Count] = updated
       setContract({ ...contract, items_detected: items })
     }
+    setHasPendingEdits(true)
+  }
+
+  function toggleEmailInclusion(globalIdx: number) {
+    const item = allItems[globalIdx]
+    const current = item.include_in_email ?? (item.severity === 'high' || item.severity === 'medium')
+    updateItem(globalIdx, { ...item, include_in_email: !current })
   }
 
   async function handleSave() {
@@ -332,342 +282,411 @@ export default function ProfessionalReportView({
     }
     setSaving(false)
     if (errors.length > 0) { setSaveError(errors.join('. ')) }
-    else { setSaved(true); setTimeout(() => setSaved(false), 3000) }
+    else { setSaved(true); setHasPendingEdits(false); setTimeout(() => setSaved(false), 3000) }
   }
 
   async function handleFinaliseConfirmed() {
-    setShowFinaliseModal(false)
-    setEditMode(false)
-    setFinalised(true)
-    // Save with finalised flag
+    setShowFinaliseModal(false); setEditingIdx(null); setFinalised(true)
     setSaving(true)
     if (reportIds.s32Id && s32) {
-      await supabase.from('reports').update({
-        raw_analysis: { ...s32, _professional_finalised: true, _finalised_at: new Date().toISOString() },
-        updated_at: new Date().toISOString(),
-      }).eq('id', reportIds.s32Id)
+      await supabase.from('reports').update({ raw_analysis: { ...s32, _professional_finalised: true, _finalised_at: new Date().toISOString() }, updated_at: new Date().toISOString() }).eq('id', reportIds.s32Id)
     }
     if (reportIds.contractId && contract) {
-      await supabase.from('reports').update({
-        raw_analysis: { ...contract, _professional_finalised: true, _finalised_at: new Date().toISOString() },
-        updated_at: new Date().toISOString(),
-      }).eq('id', reportIds.contractId)
+      await supabase.from('reports').update({ raw_analysis: { ...contract, _professional_finalised: true, _finalised_at: new Date().toISOString() }, updated_at: new Date().toISOString() }).eq('id', reportIds.contractId)
     }
     setSaving(false)
   }
 
-  function buildEmail() {
-    const h = allItems.filter(f => f.severity === 'high')
-    const m = allItems.filter(f => f.severity === 'medium')
-    const l = allItems.filter(f => f.severity === 'low')
-    let body = `Dear [Client Name],\n\nI have completed my review of the property at ${propertyAddress}.\n\n`
+  // ─── Build professional email (live) ────────────────────────────────────────
+
+  function buildEmailHTML() {
+    const h = emailItems.filter(f => f.severity === 'high')
+    const m = emailItems.filter(f => f.severity === 'medium')
+    const l = emailItems.filter(f => f.severity === 'low')
+
+    let sections = ''
+
     if (h.length > 0) {
-      body += `HIGH PRIORITY ITEMS (${h.length})\n${'─'.repeat(40)}\n`
-      h.forEach((item, i) => { body += `${i + 1}. ${item.issue}\n`; if (item.recommendation) body += `   → ${item.recommendation}\n`; body += '\n' })
+      sections += `<tr><td style="padding:24px 0 8px"><p style="font-size:11px;font-weight:700;color:#DC2626;text-transform:uppercase;letter-spacing:0.08em;margin:0">🔴 High Priority (${h.length})</p></td></tr>`
+      h.forEach((item, i) => { sections += emailItemRow(item, i + 1, '#FEF2F2', '#DC2626') })
     }
     if (m.length > 0) {
-      body += `ITEMS TO REVIEW (${m.length})\n${'─'.repeat(40)}\n`
-      m.forEach((item, i) => { body += `${i + 1}. ${item.issue}\n`; if (item.recommendation) body += `   → ${item.recommendation}\n`; body += '\n' })
+      sections += `<tr><td style="padding:24px 0 8px"><p style="font-size:11px;font-weight:700;color:#D97706;text-transform:uppercase;letter-spacing:0.08em;margin:0">🟡 Items to Review (${m.length})</p></td></tr>`
+      m.forEach((item, i) => { sections += emailItemRow(item, i + 1, '#FFFBEB', '#D97706') })
     }
     if (l.length > 0) {
-      body += `NOTED (${l.length})\n${'─'.repeat(40)}\n`
-      l.forEach((item, i) => { body += `${i + 1}. ${item.issue}\n` }); body += '\n'
+      sections += `<tr><td style="padding:24px 0 8px"><p style="font-size:11px;font-weight:700;color:#0284C7;text-transform:uppercase;letter-spacing:0.08em;margin:0">🔵 Noted (${l.length})</p></td></tr>`
+      l.forEach((item, i) => { sections += emailItemRow(item, i + 1, '#F0F9FF', '#0284C7') })
     }
+
+    return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:640px;margin:0 auto">
+<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
+<tr><td style="background:#E8001D;padding:24px 32px;border-radius:12px 12px 0 0;text-align:center">
+  <p style="margin:0;color:white;font-size:20px;font-weight:800">🦉 PropertyOwl AI</p>
+  <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:12px">Property Review Report</p>
+</td></tr>
+<tr><td style="padding:28px 32px;background:white;border:1px solid #eee;border-top:none">
+  <p style="margin:0 0 4px;font-size:11px;color:#999;text-transform:uppercase;letter-spacing:0.08em;font-weight:600">Property</p>
+  <p style="margin:0 0 20px;font-size:16px;font-weight:700;color:#111">${propertyAddress}</p>
+  <p style="margin:0;font-size:14px;color:#333;line-height:1.7">Dear Client,</p>
+  <p style="margin:12px 0 0;font-size:14px;color:#333;line-height:1.7">I have completed my review of the documentation for the above property. Below is a summary of the key findings and recommended actions.</p>
+  ${sections}
+  <div style="margin:28px 0 0;padding:20px;background:#F9FAFB;border-radius:8px;border:1px solid #E5E7EB">
+    <p style="margin:0;font-size:14px;color:#333;line-height:1.7">Please don't hesitate to contact me if you have any questions about the above items or would like to discuss further.</p>
+    <p style="margin:16px 0 0;font-size:14px;color:#333">Kind regards,<br/><strong>[Your Name]</strong><br/>${typeLabel}</p>
+  </div>
+</td></tr>
+<tr><td style="padding:16px 32px;background:#F9FAFB;border:1px solid #eee;border-top:none;border-radius:0 0 12px 12px;text-align:center">
+  <p style="margin:0;font-size:10px;color:#999;line-height:1.6">This email was prepared using PropertyOwl AI. The analysis is AI-assisted and should be validated against source documents. This is not legal advice.</p>
+</td></tr>
+</table></div>`
+  }
+
+  function emailItemRow(item: RiskItem, num: number, bg: string, color: string) {
+    return `<tr><td style="padding:6px 0"><div style="background:${bg};border-radius:8px;padding:14px 16px;border-left:3px solid ${color}">
+  <p style="margin:0 0 4px;font-size:13px;font-weight:700;color:#111">${num}. ${item.issue}</p>
+  ${item.context ? `<p style="margin:4px 0;font-size:12px;color:#666;line-height:1.6">${item.context}</p>` : ''}
+  ${item.recommendation ? `<p style="margin:6px 0 0;font-size:12px;color:${color};font-weight:600">→ ${item.recommendation}</p>` : ''}
+</div></td></tr>`
+  }
+
+  function buildPlainText() {
+    const items = emailItems
+    let body = `Dear Client,\n\nI have completed my review of the property at ${propertyAddress}.\n\n`
+    const h = items.filter(f => f.severity === 'high')
+    const m = items.filter(f => f.severity === 'medium')
+    const l = items.filter(f => f.severity === 'low')
+    if (h.length > 0) { body += `HIGH PRIORITY (${h.length})\n${'─'.repeat(40)}\n`; h.forEach((item, i) => { body += `${i + 1}. ${item.issue}\n`; if (item.recommendation) body += `   → ${item.recommendation}\n`; body += '\n' }) }
+    if (m.length > 0) { body += `ITEMS TO REVIEW (${m.length})\n${'─'.repeat(40)}\n`; m.forEach((item, i) => { body += `${i + 1}. ${item.issue}\n`; if (item.recommendation) body += `   → ${item.recommendation}\n`; body += '\n' }) }
+    if (l.length > 0) { body += `NOTED (${l.length})\n${'─'.repeat(40)}\n`; l.forEach((item, i) => { body += `${i + 1}. ${item.issue}\n` }); body += '\n' }
     body += `Please contact me if you have any questions.\n\nKind regards,\n[Your Name]\n${typeLabel}`
     return body
   }
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(`Subject: ${emailSubject}\n\n${emailBody || buildEmail()}`)
+    await navigator.clipboard.writeText(`Subject: ${emailSubject}\n\n${buildPlainText()}`)
     setCopied(true); setTimeout(() => setCopied(false), 2500)
   }
 
+  // ─── Document Sections helper ───────────────────────────────────────────────
+
+  const allSections: { key: string; section: any; source: string }[] = [
+    ...Object.entries(s32?.sections ?? {}).map(([k, v]) => ({ key: k, section: v, source: 's32' })),
+    ...Object.entries(contract?.sections ?? {}).map(([k, v]) => ({ key: k, section: v, source: 'contract' })),
+  ]
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <>
-      {/* ── Page thumbnail lightbox ── */}
       {lightboxPage !== null && pageThumbnails[lightboxPage] && (
-        <ThumbnailLightbox
-          page={lightboxPage}
-          src={pageThumbnails[lightboxPage]}
-          onClose={() => setLightboxPage(null)}
-        />
+        <ThumbnailLightbox page={lightboxPage} src={pageThumbnails[lightboxPage]} onClose={() => setLightboxPage(null)} />
       )}
-
-      {/* ── Finalise modal ── */}
       {showFinaliseModal && (
-        <FinaliseModal
-          userType={userType}
-          propertyAddress={propertyAddress}
-          onConfirm={handleFinaliseConfirmed}
-          onCancel={() => setShowFinaliseModal(false)}
-        />
+        <FinaliseModal userType={userType} propertyAddress={propertyAddress} onConfirm={handleFinaliseConfirmed} onCancel={() => setShowFinaliseModal(false)} />
+      )}
+      {showTaskPanel && (
+        <CreateTaskPanel item={taskPanelItem?.item} itemIndex={taskPanelItem?.index} propertyId={propertyId}
+          onClose={() => { setShowTaskPanel(false); setTaskPanelItem(undefined) }}
+          onCreated={(task) => setTasks(prev => [...prev, task])} />
       )}
 
       <div className="space-y-4">
 
-        {/* ── AI disclaimer banner — single line, above everything ── */}
-        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
-          <span className="text-base flex-shrink-0">⚠️</span>
-          <p className="text-xs text-amber-800 leading-relaxed">
-            <strong>AI-Generated Analysis</strong> — This content was produced by an AI model and may contain errors, omissions or misinterpretations.
-            You are the authority on all findings. Validate against source documents before acting or advising clients.
+        {/* AI disclaimer */}
+        <div className="flex items-center gap-3 bg-amber-50/70 border border-amber-200/80 rounded-lg px-4 py-2.5">
+          <span className="text-sm flex-shrink-0">⚠️</span>
+          <p className="text-xs text-amber-700 leading-relaxed">
+            <strong>AI-Generated Analysis</strong> — Validate against source documents before acting or advising clients.
           </p>
-          {finalised && (
-            <span className="flex-shrink-0 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
-              ✓ Finalised
-            </span>
-          )}
+          {finalised && <span className="ml-auto flex-shrink-0 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">✓ Finalised</span>}
         </div>
 
-        {/* ── Combined tab bar + action buttons ── */}
+        {/* Tab bar + actions */}
         <div className="flex items-center bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-
-          {/* Tabs */}
-          <div className="flex flex-1 border-r border-gray-200">
+          <div className="flex flex-1 border-r border-gray-100">
             {[
-              { key: 'risk',     label: `Risk Analysis (${allItems.length})` },
+              { key: 'risk', label: `Risk Analysis (${allItems.length})` },
               { key: 'sections', label: 'Document Sections' },
-              { key: 'email',    label: '✉️ Client Email' },
+              { key: 'tasks', label: `Tasks (${tasks.length})` },
+              { key: 'email', label: `✉️ Client Email (${emailItems.length})` },
             ].map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
-                className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
-                  activeTab === tab.key ? 'border-[#E8001D] text-[#E8001D]' : 'border-transparent text-gray-500 hover:text-gray-800'
-                }`}>
+                className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.key ? 'border-[#E8001D] text-[#E8001D]' : 'border-transparent text-gray-400 hover:text-gray-700'}`}>
                 {tab.label}
               </button>
             ))}
           </div>
-
-          {/* Action buttons in tab bar */}
           <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0">
-            {saveError && <span className="text-xs text-red-500 max-w-[160px] truncate">{saveError}</span>}
-
-            {/* Save — edit mode only */}
-            {editMode && (
+            {saveError && <span className="text-xs text-red-500 max-w-[140px] truncate">{saveError}</span>}
+            {/* Fallback Save — always visible when pending edits */}
+            {hasPendingEdits && (
               <button onClick={handleSave} disabled={saving}
-                className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
-                  saved ? 'bg-emerald-500 text-white border-emerald-500' : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                }`}>
+                className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${saved ? 'bg-emerald-500 text-white border-emerald-500' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
                 {saved ? '✓ Saved' : saving ? 'Saving…' : '💾 Save'}
               </button>
             )}
-
-            {/* Edit */}
-            <button onClick={() => setEditMode(true)} disabled={editMode || finalised}
-              title={finalised ? 'Report is finalised — click Revise to edit' : 'Edit report content'}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${
-                editMode || finalised
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
-                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-              }`}>
-              ✏️ Edit
-            </button>
-
-            {/* Finalise / Revise */}
             {!finalised ? (
-              <button onClick={() => { if (editMode) setEditMode(false); setShowFinaliseModal(true) }}
-                className="text-xs font-bold px-4 py-1.5 rounded-lg bg-[#E8001D] hover:bg-red-700 text-white transition-colors">
-                Finalise
-              </button>
+              <button onClick={() => setShowFinaliseModal(true)} className="text-xs font-bold px-4 py-1.5 rounded-lg bg-[#E8001D] hover:bg-red-700 text-white transition-colors">Finalise</button>
             ) : (
-              <button onClick={() => { setFinalised(false); setEditMode(true) }}
-                className="text-xs font-bold px-4 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-900 text-white transition-colors">
-                Revise
-              </button>
+              <button onClick={() => { setFinalised(false) }} className="text-xs font-bold px-4 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-900 text-white transition-colors">Revise</button>
             )}
           </div>
         </div>
 
-        {/* Edit mode hint */}
-        {editMode && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
-            <p className="text-xs text-amber-700 font-semibold">✏️ Edit mode active — modify any field below. Click Save to preserve changes, then Finalise when your review is complete.</p>
-          </div>
-        )}
-
-        {/* ── Risk Analysis tab ── */}
+        {/* ── Risk Analysis ── */}
         {activeTab === 'risk' && (
-          <div className="space-y-4">
-            {/* Filter buttons */}
+          <div className="space-y-3">
             <div className="flex gap-2 flex-wrap">
               {[
-                { k: 'all',    label: `All (${allItems.length})`, active: 'bg-gray-800 text-white' },
-                { k: 'high',   label: `🔴 High (${high})`,        active: 'bg-red-600 text-white' },
-                { k: 'medium', label: `🟡 Medium (${medium})`,    active: 'bg-amber-500 text-white' },
-                { k: 'low',    label: `🔵 Low (${low})`,          active: 'bg-blue-500 text-white' },
-              ].map(({ k, label, active }) => (
+                { k: 'all', label: `All (${allItems.length})`, cls: 'bg-gray-800 text-white' },
+                { k: 'high', label: `High (${high})`, cls: 'bg-red-500 text-white' },
+                { k: 'medium', label: `Medium (${medium})`, cls: 'bg-amber-500 text-white' },
+                { k: 'low', label: `Low (${low})`, cls: 'bg-sky-500 text-white' },
+              ].map(({ k, label, cls }) => (
                 <button key={k} onClick={() => setFilter(k as any)}
-                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
-                    filter === k ? active : 'bg-white border border-gray-200 text-gray-500 hover:text-gray-800'
-                  }`}>
+                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${filter === k ? cls : 'bg-white border border-gray-200 text-gray-400 hover:text-gray-700'}`}>
                   {label}
                 </button>
               ))}
             </div>
 
-            {filtered.length === 0 ? (
-              <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-                <span className="text-3xl">🎉</span>
-                <p className="text-sm font-bold text-gray-700 mt-2">No items in this category</p>
+            {filtered.map((item, i) => {
+              const globalIdx = allItems.indexOf(item)
+              const s = SEV[item.severity]
+              const isEditing = editingIdx === globalIdx
+              const isIncluded = item.include_in_email !== false && (item.severity === 'high' || item.severity === 'medium' || item.include_in_email === true)
+
+              return (
+                <div key={globalIdx} className={`rounded-xl border ${s.border} overflow-hidden transition-all ${isEditing ? 'ring-2 ring-amber-300 shadow-md' : 'hover:shadow-sm'}`}>
+                  {/* Header */}
+                  <div className={`flex items-center justify-between px-4 py-2.5 ${s.bg}`}>
+                    <div className="flex items-center gap-2.5">
+                      <span className={`w-2 h-2 rounded-full ${s.dot}`} />
+                      <span className={`text-[10px] font-bold ${s.text}`}>{s.label}</span>
+                      <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">{item.category}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {/* Include in email toggle */}
+                      <button onClick={() => toggleEmailInclusion(globalIdx)} title={isIncluded ? 'Included in client email' : 'Click to include in client email'}
+                        className={`text-[10px] font-bold px-2 py-1 rounded transition-all ${isIncluded ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-400 border border-gray-200 hover:text-gray-600'}`}>
+                        {isIncluded ? '✉️ In email' : '✉️ Add'}
+                      </button>
+                      {/* Page ref */}
+                      {item.source_page && pageThumbnails[item.source_page] && (
+                        <button onClick={() => setLightboxPage(item.source_page!)} className="text-[10px] font-bold text-sky-600 bg-sky-50 border border-sky-200 px-2 py-1 rounded hover:bg-sky-100 transition-all">
+                          📄 Page {item.source_page}
+                        </button>
+                      )}
+                      {/* Edit button */}
+                      {!finalised && (
+                        <button onClick={() => setEditingIdx(isEditing ? null : globalIdx)}
+                          className={`text-[10px] font-bold px-2 py-1 rounded transition-all ${isEditing ? 'bg-amber-200 text-amber-800 border border-amber-300' : 'bg-white text-gray-500 border border-gray-200 hover:text-gray-700'}`}>
+                          {isEditing ? '✓ Done' : '✏️ Edit'}
+                        </button>
+                      )}
+                      {/* Create task */}
+                      <button onClick={() => { setTaskPanelItem({ item, index: globalIdx }); setShowTaskPanel(true) }}
+                        className="text-[10px] font-bold px-2 py-1 rounded bg-white text-gray-500 border border-gray-200 hover:text-[#E8001D] hover:border-red-200 transition-all">
+                        📌 Task
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Body */}
+                  <div className="bg-white px-4 py-3 space-y-2.5">
+                    {/* Issue */}
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Issue</p>
+                      {isEditing ? (
+                        <input type="text" value={item.issue} onChange={e => updateItem(globalIdx, { ...item, issue: e.target.value })}
+                          className="w-full border border-amber-300 rounded-lg px-2.5 py-1.5 text-sm bg-amber-50/50 focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                      ) : (
+                        <p className={`text-sm font-semibold ${s.text}`}>{item.issue}</p>
+                      )}
+                    </div>
+
+                    {/* Context */}
+                    {(item.context || isEditing) && (
+                      <div className="bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Context</p>
+                        {isEditing ? (
+                          <textarea value={item.context ?? ''} onChange={e => updateItem(globalIdx, { ...item, context: e.target.value })}
+                            rows={2} className="w-full border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs bg-amber-50/50 focus:outline-none resize-none" />
+                        ) : (
+                          <p className="text-xs text-gray-600 leading-relaxed">{item.context}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Recommendation */}
+                    {(item.recommendation || isEditing) && (
+                      <div className="bg-white rounded-lg border border-dashed border-gray-200 px-3 py-2">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">💡 Recommendation</p>
+                        {isEditing ? (
+                          <textarea value={item.recommendation ?? ''} onChange={e => updateItem(globalIdx, { ...item, recommendation: e.target.value })}
+                            rows={2} className="w-full border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs bg-amber-50/50 focus:outline-none resize-none" />
+                        ) : (
+                          <p className="text-xs text-gray-700 leading-relaxed">{item.recommendation}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Suggested action */}
+                    {(item.suggested_action || isEditing) && (
+                      <div className="bg-indigo-50/50 rounded-lg border border-indigo-100 px-3 py-2">
+                        <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-0.5">⚡ Suggested Action</p>
+                        {isEditing ? (
+                          <textarea value={item.suggested_action ?? ''} onChange={e => updateItem(globalIdx, { ...item, suggested_action: e.target.value })}
+                            rows={2} className="w-full border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs bg-amber-50/50 focus:outline-none resize-none" />
+                        ) : (
+                          <p className="text-xs text-indigo-700 leading-relaxed">{item.suggested_action}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* ── Document Sections ── */}
+        {activeTab === 'sections' && (
+          <div className="space-y-3">
+            {allSections.map(({ key, section, source }) => {
+              if (!section || typeof section !== 'object') return null
+              const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+              const stat = section.status
+              const statusColor = stat === 'clear' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : stat === 'issues' ? 'text-red-600 bg-red-50 border-red-200' : 'text-gray-500 bg-gray-50 border-gray-200'
+              return (
+                <div key={`${source}-${key}`} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 bg-gray-50/50 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-gray-800">{label}</p>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusColor}`}>{stat?.toUpperCase()}</span>
+                      <span className="text-[10px] text-gray-400">{source.toUpperCase()}</span>
+                    </div>
+                  </div>
+                  <div className="px-4 py-3">
+                    {section.summary && <p className="text-xs text-gray-600 leading-relaxed">{section.summary}</p>}
+                    {section.findings && section.findings.length > 0 && (
+                      <div className="mt-2 space-y-1">{section.findings.map((f: string, i: number) => <p key={i} className="text-xs text-gray-500">• {f}</p>)}</div>
+                    )}
+                    {section.conditions && section.conditions.length > 0 && (
+                      <div className="mt-2 space-y-1.5">{section.conditions.map((c: any, i: number) => (
+                        <div key={i} className="text-xs text-gray-600">{c.number ? `SC${c.number}: ` : ''}<span className={`font-bold ${c.complexity === 'unusual' ? 'text-red-600' : c.complexity === 'non-standard' ? 'text-amber-600' : 'text-gray-500'}`}>{c.complexity?.toUpperCase()}</span> {c.summary}</div>
+                      ))}</div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* ── Tasks Tab ── */}
+        {activeTab === 'tasks' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex gap-1.5">
+                {[
+                  { k: 'all', label: `All (${tasks.length})` },
+                  { k: 'pending', label: `Pending` },
+                  { k: 'completed', label: `Completed` },
+                  { k: 'high', label: `High Priority` },
+                ].map(f => (
+                  <button key={f.k} onClick={() => setTaskFilter(f.k as any)}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${taskFilter === f.k ? 'bg-gray-800 text-white' : 'bg-white border border-gray-200 text-gray-400 hover:text-gray-700'}`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => { setTaskPanelItem(undefined); setShowTaskPanel(true) }}
+                className="text-xs font-bold px-4 py-1.5 rounded-lg bg-[#E8001D] hover:bg-red-700 text-white transition-colors">
+                + New Task
+              </button>
+            </div>
+
+            {tasks.length === 0 ? (
+              <div className="bg-white rounded-xl border border-dashed border-gray-300 p-10 text-center">
+                <p className="text-3xl mb-2">📌</p>
+                <p className="text-sm font-bold text-gray-700 mb-1">No tasks yet</p>
+                <p className="text-xs text-gray-400 mb-4">Create tasks from risk items or add them manually</p>
+                <button onClick={() => { setTaskPanelItem(undefined); setShowTaskPanel(true) }}
+                  className="inline-flex items-center gap-2 bg-[#E8001D] text-white px-5 py-2.5 rounded-lg font-semibold text-sm hover:bg-red-700 transition-colors">
+                  + Create Task
+                </button>
               </div>
             ) : (
-              <div className="space-y-3">
-                {filtered.map(item => {
-                  const globalIdx = allItems.indexOf(item)
+              <div className="space-y-2">
+                {tasks.filter(t => {
+                  if (taskFilter === 'pending') return t.status !== 'completed'
+                  if (taskFilter === 'completed') return t.status === 'completed'
+                  if (taskFilter === 'high') return t.priority === 'high'
+                  return true
+                }).map((task, i) => {
+                  const pCol = task.priority === 'high' ? 'border-l-red-500 bg-red-50/30' : task.priority === 'medium' ? 'border-l-amber-500 bg-amber-50/30' : 'border-l-sky-500 bg-sky-50/30'
                   return (
-                    <RiskCard key={globalIdx} item={item} onChange={u => updateItem(globalIdx, u)} editMode={editMode} pageThumbnails={pageThumbnails} onShowPage={setLightboxPage} />
+                    <div key={task.id ?? i} className={`bg-white rounded-lg border border-gray-200 border-l-4 ${pCol} px-4 py-3 flex items-center justify-between`}>
+                      <div>
+                        <p className={`text-sm font-semibold ${task.status === 'completed' ? 'line-through text-gray-400' : 'text-gray-900'}`}>{task.title}</p>
+                        {task.description && <p className="text-xs text-gray-500 mt-0.5 truncate max-w-md">{task.description}</p>}
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${task.priority === 'high' ? 'bg-red-100 text-red-700' : task.priority === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>
+                            {task.priority.toUpperCase()}
+                          </span>
+                          {task.due_date && <span className="text-[10px] text-gray-400">Due: {task.due_date}</span>}
+                        </div>
+                      </div>
+                      <button onClick={async () => {
+                        const newStatus = task.status === 'completed' ? 'pending' : 'completed'
+                        setTasks(prev => prev.map((t, ti) => ti === i ? { ...t, status: newStatus } : t))
+                        if (task.id) await supabase.from('crm_tasks').update({ status: newStatus, completed_at: newStatus === 'completed' ? new Date().toISOString() : null }).eq('id', task.id)
+                      }}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${task.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-gray-500 border-gray-200 hover:text-emerald-600 hover:border-emerald-300'}`}>
+                        {task.status === 'completed' ? '✓ Done' : 'Complete'}
+                      </button>
+                    </div>
                   )
                 })}
               </div>
             )}
-
-            {/* Questions to explore */}
-            {((s32?.questions_to_explore ?? []).length > 0 || (contract?.questions_to_explore ?? []).length > 0) && (
-              <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-3">❓ Questions to Explore</p>
-                <div className="space-y-2">
-                  {[...(s32?.questions_to_explore ?? []), ...(contract?.questions_to_explore ?? [])].map((q: string, i: number) => (
-                    <div key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                      <span className="text-gray-400 flex-shrink-0">→</span>
-                      {editMode
-                        ? <input value={q} onChange={e => {
-                            const arr = [...(s32?.questions_to_explore ?? [])]
-                            arr[i] = e.target.value
-                            setS32({ ...s32, questions_to_explore: arr })
-                          }} className="flex-1 border border-amber-300 rounded px-2 py-0.5 text-sm bg-amber-50 focus:outline-none" />
-                        : <span>{q}</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {/* ── Document Sections tab ── */}
-        {activeTab === 'sections' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* S32 sections */}
-            {s32?.sections && Object.entries(s32.sections).map(([key, section]: [string, any]) => {
-              if (!section) return null
-              const statusColor = ({
-                clear: 'border-l-emerald-500 bg-emerald-50',
-                issues: 'border-l-red-500 bg-red-50',
-                issues_found: 'border-l-red-500 bg-red-50',
-                not_provided: 'border-l-gray-300 bg-gray-50',
-                not_applicable: 'border-l-gray-300 bg-gray-50',
-                incomplete: 'border-l-amber-400 bg-amber-50',
-              } as Record<string, string>)[section.status] ?? 'border-l-gray-300 bg-gray-50'
-
-              const sectionLabel: Record<string, string> = {
-                title_and_ownership: '📋 Title & Ownership', planning_and_zoning: '🗺️ Planning & Zoning',
-                easements_and_covenants: '⛓️ Easements & Covenants', building_permits: '🏗️ Building Permits',
-                owners_corporation: '🏢 Owners Corporation', outgoings: '💰 Outgoings', vendor_disclosure: '📄 Vendor Disclosure',
-              }
-
-              return (
-                <div key={key} className={`rounded-xl border-l-4 ${statusColor} p-4`}>
-                  <p className="text-sm font-bold text-gray-800 mb-2">{sectionLabel[key] ?? key}</p>
-                  {section.council_rates && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Council rates:</span> {section.council_rates}</p>}
-                  {section.council_name  && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Council:</span> {section.council_name}</p>}
-                  {section.water_charges && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Water charges:</span> {section.water_charges}</p>}
-                  {section.zone          && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Zone:</span> {section.zone}</p>}
-                  {section.overlays?.length > 0 && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Overlays:</span> {section.overlays.join(', ')}</p>}
-                  {section.annual_fee    && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">OC annual fee:</span> {section.annual_fee}</p>}
-                  {section.lot_plan      && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Lot/Plan:</span> {section.lot_plan}</p>}
-                  {section.volume_folio  && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Volume/Folio:</span> {section.volume_folio}</p>}
-                  {section.summary && (
-                    <p className="text-xs text-gray-600 mt-2 leading-relaxed italic border-t border-black/10 pt-2">
-                      <EditableField value={section.summary} onChange={v => setS32((prev: any) => ({
-                        ...prev, sections: { ...prev.sections, [key]: { ...section, summary: v } }
-                      }))} multiline editMode={editMode} />
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-
-            {/* Contract sections */}
-            {contract?.sections && Object.entries(contract.sections).map(([key, section]: [string, any]) => {
-              if (!section) return null
-              const statusColor = ({
-                clear: 'border-l-emerald-500 bg-emerald-50',
-                issues: 'border-l-red-500 bg-red-50',
-                not_provided: 'border-l-gray-300 bg-gray-50',
-                not_applicable: 'border-l-gray-300 bg-gray-50',
-                incomplete: 'border-l-amber-400 bg-amber-50',
-              } as Record<string, string>)[section.status] ?? 'border-l-gray-300 bg-gray-50'
-
-              const sectionLabel: Record<string, string> = {
-                price_and_deposit: '💵 Price & Deposit', settlement: '📅 Settlement',
-                special_conditions: '📝 Special Conditions', goods_and_chattels: '🛋️ Goods & Chattels',
-                cooling_off: '❄️ Cooling Off', gst_and_tax: '🧾 GST & Tax', penalty_and_risk: '⚠️ Penalty & Risk',
-              }
-
-              return (
-                <div key={key} className={`rounded-xl border-l-4 ${statusColor} p-4`}>
-                  <p className="text-sm font-bold text-gray-800 mb-2">{sectionLabel[key] ?? key}</p>
-                  {section.purchase_price && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Purchase price:</span> {section.purchase_price}</p>}
-                  {section.deposit_amount && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Deposit:</span> {section.deposit_amount}</p>}
-                  {section.settlement_date && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Settlement:</span> {section.settlement_date}</p>}
-                  {section.period && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Cooling off:</span> {section.period}{section.waived ? ' (WAIVED)' : ''}</p>}
-                  {section.penalty_interest_rate && <p className="text-xs text-gray-600 mb-1"><span className="font-semibold">Penalty rate:</span> {section.penalty_interest_rate}</p>}
-                  {section.conditions?.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {section.conditions.map((c: any, i: number) => (
-                        <div key={i} className="text-xs text-gray-600 pl-2 border-l-2 border-gray-300">
-                          <span className={`font-bold ${c.complexity === 'requires_review' ? 'text-red-600' : c.complexity === 'non-standard' ? 'text-amber-600' : 'text-gray-600'}`}>
-                            {c.number ? `SC${c.number}: ` : ''}{c.complexity?.toUpperCase()}
-                          </span> {c.summary}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {section.summary && (
-                    <p className="text-xs text-gray-600 mt-2 leading-relaxed italic border-t border-black/10 pt-2">
-                      <EditableField value={section.summary} onChange={v => setContract((prev: any) => ({
-                        ...prev, sections: { ...prev.sections, [key]: { ...section, summary: v } }
-                      }))} multiline editMode={editMode} />
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* ── Client Email tab ── */}
+        {/* ── Client Email (live-updating) ── */}
         {activeTab === 'email' && (
           <div className="space-y-4">
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <p className="text-xs font-bold text-amber-800 mb-1">Review before sending</p>
-              <p className="text-xs text-amber-700 leading-relaxed">
-                This draft is based on the AI analysis. Edit it to reflect your professional judgement before sending to your client.
+            <div className="bg-sky-50 border border-sky-200 rounded-lg px-4 py-2.5">
+              <p className="text-xs text-sky-700 leading-relaxed">
+                <strong>Live preview</strong> — This email updates automatically when you edit risk items or toggle "Include in email". {emailItems.length} item{emailItems.length !== 1 ? 's' : ''} currently included.
               </p>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase tracking-wide">Subject Line</label>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Subject Line</label>
               <input type="text" value={emailSubject} onChange={e => setEmailSubject(e.target.value)}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#E8001D]" />
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-gray-600 uppercase tracking-wide">Email Body</label>
-                <button onClick={() => setEmailBody(buildEmail())} className="text-xs text-[#E8001D] font-bold hover:underline">
-                  ↺ Regenerate from analysis
-                </button>
+            {/* Email preview */}
+            <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+              <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-500">Email Preview</span>
+                <span className="text-[10px] text-gray-400">Updates live from your edits</span>
               </div>
-              <textarea value={emailBody || buildEmail()} onChange={e => setEmailBody(e.target.value)}
-                rows={16}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:border-[#E8001D] resize-y" />
+              <div className="p-4 bg-gray-100/50">
+                <div className="bg-white rounded-lg shadow-sm p-6 max-w-2xl mx-auto" dangerouslySetInnerHTML={{ __html: buildEmailHTML() }} />
+              </div>
             </div>
 
-            <button onClick={handleCopy}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${copied ? 'bg-emerald-500 text-white' : 'bg-[#E8001D] hover:bg-red-700 text-white'}`}>
-              {copied ? '✓ Copied to clipboard' : '📋 Copy full email'}
-            </button>
+            <div className="flex gap-3">
+              <button onClick={handleCopy}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${copied ? 'bg-emerald-500 text-white' : 'bg-[#E8001D] hover:bg-red-700 text-white'}`}>
+                {copied ? '✓ Copied' : '📋 Copy plain text'}
+              </button>
+            </div>
           </div>
         )}
       </div>

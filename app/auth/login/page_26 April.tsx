@@ -26,6 +26,7 @@ export default function LoginPage() {
       setLoading(false);
     } else {
       router.push("/dashboard");
+      router.refresh();
     }
   }
 
@@ -43,39 +44,32 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen grid grid-cols-1 md:grid-cols-2">
-
-      {/* LEFT — Professional branding */}
-      <div className="hidden md:flex flex-col justify-between bg-[#111] text-white p-12">
-        <div>
-          <div className="flex items-center gap-2 mb-16">
-            <span className="text-2xl">🦉</span>
-            <span className="text-xl font-black">PropertyOwl<span className="text-[#E8001D]"> AI</span></span>
-          </div>
-          <h2 className="text-3xl font-bold leading-tight mb-4" style={{ fontFamily: "Georgia, serif", letterSpacing: "-0.02em" }}>
-            AI-powered property<br />review for Victorian<br />
-            <span className="text-[#E8001D]">conveyancers & lawyers.</span>
-          </h2>
-          <p className="text-gray-400 text-sm leading-relaxed max-w-sm mt-6">
-            Upload S32 and Contract of Sale documents. Get instant risk analysis, professional client emails, and task management — all in one platform built for legal professionals.
-          </p>
-          <div className="mt-10 space-y-3">
-            {[
-              { icon: "⚡", text: "Full S32 + Contract review in 2 minutes" },
-              { icon: "🔍", text: "60+ data points extracted per document" },
-              { icon: "✉️", text: "Client advisory emails drafted automatically" },
-              { icon: "📌", text: "Built-in task management per property" },
-            ].map(f => (
-              <div key={f.text} className="flex items-center gap-3">
-                <span className="text-lg">{f.icon}</span>
-                <span className="text-sm text-gray-300">{f.text}</span>
-              </div>
-            ))}
-          </div>
+      {/* LEFT — BRAND PANEL */}
+      <div className="hidden md:flex bg-gray-900 flex-col justify-center px-14 py-16 relative overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-1 bg-[#E8001D]" />
+        <div className="flex items-center gap-2 mb-8">
+          <span className="text-3xl">🦉</span>
+          <span className="text-2xl font-black text-white">PropertyOwl<span className="text-[#E8001D]"> AI</span></span>
         </div>
-        <div className="mt-12 pt-6 border-t border-gray-800">
-          <p className="text-xs text-gray-500">
-            PropertyOwl AI extracts document information — not legal advice.
-          </p>
+        <h2 className="text-3xl font-black text-white mb-3 leading-tight">
+          See the full picture<br />of any property.
+        </h2>
+        <p className="text-gray-400 mb-10 text-sm leading-relaxed">
+          AI-powered property document extraction for Victorian property buyers. See the full picture of any property.
+        </p>
+        {[
+          { icon: "📄", text: "S32 & Contract of Sale information extraction" },
+          { icon: "🗺️", text: "Planning zones, overlays & flood zone display" },
+          { icon: "🏫", text: "School zones & suburb information" },
+          { icon: "🌐", text: "Deep online property information search" },
+        ].map((f) => (
+          <div key={f.text} className="flex items-center gap-3 mb-4">
+            <span className="text-lg">{f.icon}</span>
+            <span className="text-sm text-gray-300">{f.text}</span>
+          </div>
+        ))}
+        <div className="mt-10 p-4 bg-white/5 rounded-lg border border-white/10 text-xs text-gray-500 leading-relaxed">
+          ⚠️ Information display only. PropertyOwl AI extracts document information — not legal advice.
         </div>
       </div>
 
@@ -88,7 +82,7 @@ export default function LoginPage() {
           </div>
 
           <h1 className="text-2xl font-black text-gray-900 mb-1">Sign in</h1>
-          <p className="text-sm text-gray-500 mb-8">Access your conveyancing dashboard</p>
+          <p className="text-sm text-gray-500 mb-8">Access your property intelligence dashboard</p>
 
           {/* GOOGLE */}
           <button
@@ -159,7 +153,7 @@ export default function LoginPage() {
           </p>
 
           <div className="mt-6 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 leading-relaxed">
-            ⚠️ <strong>For conveyancers & lawyers.</strong> PropertyOwl AI is a professional tool for reviewing property documents. Not legal advice — always apply your professional judgement.
+            ⚠️ <strong>Information display only.</strong> PropertyOwl AI extracts and displays document information. Not legal advice. Always seek independent professional advice before making property decisions.
           </div>
         </div>
       </div>
