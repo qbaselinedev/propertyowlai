@@ -119,6 +119,7 @@ export default function PropertyDetailPage() {
   const [userType, setUserType]       = useState<string>('buyer')
   const [reportIds, setReportIds]     = useState<{ s32Id?: string; contractId?: string }>({})
   const [showDisclaimer, setShowDisclaimer] = useState(true)
+  const [customer, setCustomer] = useState<{ id: string; full_name: string } | null>(null)
   const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false)
   const [fileInput] = useState(() => typeof window !== 'undefined' ?
     document.createElement('input') : null)
@@ -170,10 +171,21 @@ if (reports) {
         if (s32r?.raw_analysis) setS32(s32r.raw_analysis)
         if (conr?.raw_analysis) setContract(conr.raw_analysis)
         if (scanr?.raw_analysis) setScan(scanr.raw_analysis)
-
         // Capture report IDs for professional save functionality
         setReportIds({ s32Id: s32r?.id, contractId: conr?.id })
       }
+      // Fetch linked customer for this property (for breadcrumb)
+      const { data: custLink } = await supabase
+        .from('crm_customer_properties')
+        .select('customer_id, crm_customers(id, full_name)')
+        .eq('property_id', id)
+        .limit(1)
+        .maybeSingle()
+      if (custLink?.crm_customers) {
+        const c = custLink.crm_customers as any
+        setCustomer({ id: c.id, full_name: c.full_name })
+      }
+
     } catch (e: any) { setError(e?.message ?? 'Failed to load.') }
     finally { setLoading(false) }
   }
@@ -709,6 +721,9 @@ if (reports) {
                       propertyAddress={`${property.address}, ${property.suburb}`}
                       userType={userType as 'conveyancer' | 'lawyer'}
                       onDisclaimerNotAcknowledged={() => setShowDisclaimer(true)}
+                      propertyId={property.id}
+                      customerId={customer?.id}
+                      customerName={customer?.full_name}
                     />
                   )}
                 </>
