@@ -172,7 +172,8 @@ export default function PropertyDetailPage() {
       // After fetching profile and checking user_type, add:
 
       // Detect if current user is a buyer (not a conveyancer/lawyer)
-      const isBuyerUser = !['conveyancer', 'lawyer'].includes(prof?.user_type ?? '')
+      //const isBuyerUser = !['conveyancer', 'lawyer'].includes(prof?.user_type ?? '')
+      const isBuyerUser = !['conveyancer', 'lawyer'].includes(userType)
       setIsBuyer(isBuyerUser)
 
       if (isBuyerUser) {
