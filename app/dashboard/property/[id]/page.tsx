@@ -7,6 +7,8 @@ import Link from 'next/link'
 import React from 'react'
 import ProfessionalReportView from '@/components/ProfessionalReportView'
 import ProfessionalDisclaimer from '@/components/ProfessionalDisclaimer'
+import BuyerPropertyView from '@/components/BuyerPropertyView'
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -116,6 +118,8 @@ export default function PropertyDetailPage() {
   const [downloadingScan, setDownloadingScan] = useState(false)
   const [credits, setCredits] = useState(0)
   // ADD AFTER (do not remove the existing line):
+  const [isBuyer, setIsBuyer] = useState(false)
+  const [conveyancerName, setConveyancerName] = useState('')
   const [userType, setUserType]       = useState<string>('buyer')
   const [reportIds, setReportIds]     = useState<{ s32Id?: string; contractId?: string }>({})
   const [showDisclaimer, setShowDisclaimer] = useState(true)
@@ -164,6 +168,45 @@ export default function PropertyDetailPage() {
           setUserType(isPro ? prof.user_type : 'buyer')
         }
       }
+
+      // After fetching profile and checking user_type, add:
+
+      // Detect if current user is a buyer (not a conveyancer/lawyer)
+      const isBuyerUser = !['conveyancer', 'lawyer'].includes(prof?.user_type ?? '')
+      setIsBuyer(isBuyerUser)
+
+      if (isBuyerUser) {
+        // Verify buyer has access to this property via crm_customer_properties
+        const { data: access } = await supabase
+          .from('crm_customers')
+          .select('id, crm_customer_properties!inner(property_id, validated_at)')
+          .eq('email', user.email?.toLowerCase())
+          .eq('crm_customer_properties.property_id', id)
+          .single()
+
+        if (!access) {
+          // No access — redirect
+          router.push('/dashboard')
+          return
+        }
+
+        // Get conveyancer name for display
+        const { data: custData } = await supabase
+          .from('crm_customers')
+          .select('conveyancer_id')
+          .eq('email', user.email?.toLowerCase())
+          .limit(1)
+          .single()
+        if (custData?.conveyancer_id) {
+          const { data: convProf } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', custData.conveyancer_id)
+            .single()
+          setConveyancerName(convProf?.full_name ?? '')
+        }
+      }
+
 if (reports) {
         const s32r  = reports.find((r: any) => r.document_type === 's32') ?? reports.find((r: any) => r.raw_analysis?.document_type === 's32')
         const conr  = reports.find((r: any) => r.document_type === 'contract') ?? reports.find((r: any) => r.raw_analysis?.document_type === 'contract')
@@ -553,16 +596,15 @@ if (reports) {
               ⚖️ Information display only — not legal advice
             </span>
 
-            {activeTab === 'Document Information' && (s32 || contract) && (
+            {activeTab === 'Document Information' && (s32 || contract) && !isBuyer && (
               <button onClick={handleDownloadPack} disabled={downloading}
                 className="flex items-center gap-1.5 text-xs font-bold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-all disabled:opacity-50"
                 style={{background: '#E8001D'}}>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 6l3 3 3-3M1 10h10" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 {downloading ? '…' : 'Document Information PDF'}
               </button>
-            )}
-            {activeTab === 'Document Information' && (
-              // REPLACE WITH:
+            )}    
+            {activeTab === 'Document Information' && !isBuyer && (
               <button
                 onClick={triggerUpload}
                 disabled={!!uploading || credits < 2}
@@ -702,8 +744,15 @@ if (reports) {
           )}
           {activeTab === 'Document Information' && (s32 || contract) && (
             <>
-              {/* Professional view — conveyancer/lawyer only */}
-              {['conveyancer', 'lawyer'].includes(userType) ? (
+              {/* Buyer read-only view */}
+              {isBuyer ? (
+                <BuyerPropertyView
+                  s32={s32}
+                  contract={contract}
+                  propertyAddress={`${property.address}, ${property.suburb}`}
+                  conveyancerName={conveyancerName}
+isFinalised={!!((s32 as any)?._professional_finalised || (contract as any)?._professional_finalised)}                />
+              ) : ['conveyancer', ' lawyer'].includes(userType) ? (
                 <>
                   {showDisclaimer && !disclaimerAcknowledged ? (
                     <ProfessionalDisclaimer
