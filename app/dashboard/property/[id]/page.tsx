@@ -181,7 +181,7 @@ export default function PropertyDetailPage() {
         const { data: access } = await supabase
           .from('crm_customers')
           .select('id, crm_customer_properties!inner(property_id, validated_at)')
-          .eq('email', user.email?.toLowerCase())
+          .eq('email', user?.email?.toLowerCase() ?? '')
           .eq('crm_customer_properties.property_id', id)
           .single()
 
@@ -195,7 +195,7 @@ export default function PropertyDetailPage() {
         const { data: custData } = await supabase
           .from('crm_customers')
           .select('conveyancer_id')
-          .eq('email', user.email?.toLowerCase())
+          .eq('email', user?.email?.toLowerCase() ?? '')
           .limit(1)
           .single()
         if (custData?.conveyancer_id) {
