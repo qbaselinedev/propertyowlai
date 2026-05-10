@@ -127,8 +127,9 @@ export default function BuyerPropertyView({ s32, contract, propertyAddress, conv
         <div className="space-y-3">
           {allSections.map(({ key, sec, src }) => {
             if (!sec || typeof sec !== 'object') return null
+            const s = sec as any
             const lbl = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-            const st = sec.status
+            const st = (sec as any).status
             const sc = st === 'clear' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : st === 'issues' ? 'text-red-700 bg-red-50 border-red-200' : 'text-gray-500 bg-gray-50 border-gray-200'
             return (
               <div key={`${src}-${key}`} className="bg-white rounded-xl border border-gray-200">
@@ -137,8 +138,8 @@ export default function BuyerPropertyView({ s32, contract, propertyAddress, conv
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${sc}`}>{st?.toUpperCase()}</span>
                 </div>
                 <div className="px-5 py-4">
-                  {sec.summary && <p className="text-sm text-gray-700 leading-relaxed">{sec.summary}</p>}
-                  {sec.findings?.length > 0 && <div className="mt-2 space-y-1">{sec.findings.map((f: string, i: number) => <p key={i} className="text-sm text-gray-600">• {f}</p>)}</div>}
+                  {s.summary && <p className="text-sm text-gray-700 leading-relaxed">{s.summary}</p>}
+                  {s.findings?.length > 0 && <div className="mt-2 space-y-1">{s.findings.map((f: string, i: number) => <p key={i} className="text-sm text-gray-600">• {f}</p>)}</div>}
                 </div>
               </div>
             )
